@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Create account — GetCited</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <nav class="topnav">
+      <a href="/login">Log in</a>
+      <a href="/register" aria-current="page">Create account</a>
+    </nav>
+    <main class="auth-main">
+      <h1>Create account</h1>
+      <p>Register with email and password. Sites and SDK keys stay tied to your account.</p>
+      {% if error %}
+      <p class="status auth-error">{{ error }}</p>
+      {% endif %}
+      <form method="post" class="auth-form">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" required />
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required />
+        <label for="confirm">Confirm password</label>
+        <input id="confirm" name="confirm" type="password" autocomplete="new-password" minlength="8" required />
+        <button type="submit">Create account</button>
+      </form>
+      <p class="hint">Already registered? <a href="/login">Log in</a>.</p>
+    </main>
+  </body>
+</html>

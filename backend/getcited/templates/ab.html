@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>A/B Testing</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <nav class="topnav">
+      <a href="/">Sitemap Crawler</a>
+      <a href="/ads">Ad Hotspots</a>
+      <a href="/ab" aria-current="page">A/B Testing</a>
+      {% if current_user %}
+      <span class="nav-user">{{ current_user.email }}</span>
+      <a href="/logout">Log out</a>
+      {% endif %}
+    </nav>
+    <main class="wide">
+      <h1>A/B Testing</h1>
+      <p>
+        Create a site to get a unique SDK. Paste it in your site’s
+        <code>&lt;head&gt;</code> — it tracks pageviews, clicks, scroll depth,
+        engagement, and experiment assignments for every visitor.
+      </p>
+
+      <section class="ab-panel">
+        <h2>Create a site</h2>
+        <form id="site-form">
+          <label for="name">Site name</label>
+          <input id="name" name="name" type="text" placeholder="Site name" required />
+          <label for="url">Site URL</label>
+          <input id="url" name="url" type="text" inputmode="url" placeholder="https://yoursite.com" required />
+          <button type="submit">Generate unique SDK</button>
+        </form>
+        <p id="site-status" class="status" hidden></p>
+      </section>
+
+      <section class="ab-panel">
+        <h2>Your sites</h2>
+        <div id="sites" class="ab-sites"></div>
+      </section>
+
+      <section class="ab-panel" id="detail" hidden>
+        <h2 id="detail-title">Site</h2>
+        <p id="detail-meta" class="meta"></p>
+
+        <h3>Install SDK</h3>
+        <p class="hint">Paste this once in your site header:</p>
+        <pre id="snippet" class="snippet"></pre>
+        <button type="button" id="copy-snippet" class="secondary">Copy snippet</button>
+
+        <h3>Create experiment</h3>
+        <form id="exp-form" class="exp-form">
+          <label for="exp-name">Experiment name</label>
+          <input id="exp-name" type="text" placeholder="Homepage CTA" required />
+          <label for="exp-traffic">Traffic %</label>
+          <input id="exp-traffic" type="number" min="1" max="100" value="100" />
+          <label for="variant-a">Variant A name</label>
+          <input id="variant-a" type="text" value="control" required />
+          <label for="variant-b">Variant B name</label>
+          <input id="variant-b" type="text" value="treatment" required />
+          <label for="selector">Optional CSS selector to rewrite</label>
+          <input id="selector" type="text" placeholder=".hero-cta" />
+          <label for="html-b">Optional HTML/text for variant B</label>
+          <input id="html-b" type="text" placeholder="Try free for 14 days" />
+          <button type="submit">Start experiment</button>
+        </form>
+        <p id="exp-status" class="status" hidden></p>
+
+        <h3>Experiments</h3>
+        <div id="experiments"></div>
+
+        <h3>Live analytics</h3>
+        <div id="overview"></div>
+        <h4>Recent events</h4>
+        <div id="recent" class="ab-recent"></div>
+      </section>
+    </main>
+
+    <script src="/static/ab.js"></script>
+  </body>
+</html>

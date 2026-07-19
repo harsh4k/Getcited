@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ad Hotspots</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <nav class="topnav">
+      <a href="/">Sitemap Crawler</a>
+      <a href="/ads" aria-current="page">Ad Hotspots</a>
+      <a href="/ab">A/B Testing</a>
+      {% if current_user %}
+      <span class="nav-user">{{ current_user.email }}</span>
+      <a href="/logout">Log out</a>
+      {% endif %}
+    </nav>
+    <main class="wide">
+      <h1>Ad Hotspots</h1>
+      <p>
+        Paste a page URL. We’ll overlay a DeepGaze attention heatmap and rank
+        safe ad placements using attention proximity, viewability, whitespace,
+        page depth, and ad-format value.
+      </p>
+
+      <form id="ads-form">
+        <label for="url">Page URL</label>
+        <input id="url" name="url" type="text" inputmode="url" placeholder="https://synapical.com/about" autocomplete="url" required />
+        <button type="submit">Find ad placements</button>
+      </form>
+
+      <p id="status" class="status" hidden></p>
+      <div id="summary" hidden></div>
+      <div id="result" class="ad-result" hidden>
+        <img id="annotated" alt="Page snapshot with ad hotspot overlays" />
+      </div>
+    </main>
+
+    <script>
+      const form = document.getElementById("ads-form");
+      const statusEl = document.getElementById("status");
+      const summaryEl = document.getElementById("summary");
+      const resultEl = document.getElementById("result");
+      const imgEl = document.getElementById("annotated");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const url = document.getElementById("url").value.trim();
+        summaryEl.hidden = true;
+        resultEl.hidden = true;
+        imgEl.removeAttribute("src");
+        statusEl.hidden = false;
+        statusEl.textContent = "Capturing the page and running DeepGaze saliency inference… this may take a few minutes.";
+        form.querySelector("button").disabled = true;
+
+        try {
+          const response = await fetch("/ads/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url }),
+          });
+          const data = await response.json();
+          if (!response.ok || data.error && !data.image_base64) {
+            statusEl.textContent = data.error || "Analysis failed.";
+            return;
+          }
+
+          statusEl.textContent = data.error
+            ? data.error
+            : `Done. Heatmap generated with ${data.hotspot_count} safe ad recommendation(s).`;
+          if (data.warning) {
+            statusEl.textContent += " — " + data.warning;
+          }
+          summaryEl.hidden = false;
+          summaryEl.innerHTML = `
+            <p><strong>Page:</strong> ${escapeHtml(data.final_url || data.url)}</p>
+            <p><strong>Model:</strong> ${escapeHtml(data.model || "DeepGaze")}</p>
+            <p><strong>Size:</strong> ${data.page_width}×${data.page_height}px</p>
+            <p class="meta">Scores are relative placement estimates, not guaranteed revenue. Connect real impression, CTR, and RPM data to optimize for actual revenue.</p>
+            ${data.warning ? `<p class="meta">${escapeHtml(data.warning)}</p>` : ""}
+            <ol class="hotspot-list">
+              ${(data.hotspots || [])
+                .map(
+                  (h) =>
+                    `<li><strong>${escapeHtml(h.label)}</strong> — ${h.width}×${h.height} at (${h.x}, ${h.y}) · ${escapeHtml(h.reason)} · score ${h.score}</li>`
+                )
+                .join("")}
+            </ol>
+          `;
+          if (data.image_base64) {
+            imgEl.src = `data:image/png;base64,${data.image_base64}`;
+            resultEl.hidden = false;
+          }
+        } catch (err) {
+          statusEl.textContent = "Request failed: " + err.message;
+        } finally {
+          form.querySelector("button").disabled = false;
+        }
+      });
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;");
+      }
+    </script>
+  </body>
+</html>

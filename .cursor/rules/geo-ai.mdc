@@ -1,0 +1,25 @@
+---
+description: GEO.ai canonical project rules (stack, conventions, workflow)
+globs:
+alwaysApply: true
+---
+
+# GEO.ai — Cursor Rules
+
+The canonical rules for this project are in **AGENTS.md** at the repo root. Treat it as the
+single source of truth. This file only points Cursor at it and adds Cursor-specific notes.
+
+@AGENTS.md
+
+## Reference docs (open as needed)
+@brain.md
+@prd.md
+@design.md
+@brand.md
+@structure.md
+
+## Cursor notes
+- Do not restate AGENTS.md rules here — edit AGENTS.md instead, so all agents stay in sync.
+- Volatile sprint state is in `ROADMAP.md` (not auto-attached; reference it when planning).
+- Before generating code: Server Components by default, strict TS (no `any`), Zod on all inputs,
+  Tailwind + `cn()` for styles, and check `components/ui/` before creating a new primitive.

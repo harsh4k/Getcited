@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sitemap Crawler</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <nav class="topnav">
+      <a href="/" aria-current="page">Sitemap Crawler</a>
+      <a href="/ads">Ad Hotspots</a>
+      <a href="/ab">A/B Testing</a>
+      {% if current_user %}
+      <span class="nav-user">{{ current_user.email }}</span>
+      <a href="/logout">Log out</a>
+      {% endif %}
+    </nav>
+    <main>
+      <h1>Sitemap Crawler</h1>
+      <p>Enter a site — with <code>https://</code>, <code>http://</code>, or just the domain (e.g. <code>synapical.com</code>). Uses the sitemap when available; otherwise crawls same-domain links from the page (e.g. <code>/about</code>).</p>
+
+      <form id="crawl-form">
+        <label for="url">Site URL</label>
+        <input id="url" name="url" type="text" inputmode="url" placeholder="synapical.com" autocomplete="url" required />
+        <button type="submit">Crawl sitemap</button>
+      </form>
+
+      <p id="status" class="status" hidden></p>
+      <div id="summary" hidden></div>
+      <div id="results"></div>
+    </main>
+
+    <script>
+      const form = document.getElementById("crawl-form");
+      const statusEl = document.getElementById("status");
+      const summaryEl = document.getElementById("summary");
+      const resultsEl = document.getElementById("results");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const url = document.getElementById("url").value.trim();
+        resultsEl.innerHTML = "";
+        summaryEl.hidden = true;
+        statusEl.hidden = false;
+        statusEl.textContent = "Looking for sitemap and fetching pages… this can take a minute.";
+        form.querySelector("button").disabled = true;
+
+        try {
+          const response = await fetch("/crawl", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url }),
+          });
+          const data = await response.json();
+
+          if (!response.ok || data.error) {
+            statusEl.textContent = data.error || "Crawl failed.";
+            return;
+          }
+
+          statusEl.textContent = `Done. Found ${data.link_count} link(s) via ${data.source === "sitemap" ? "sitemap" : "same-domain HTML crawl"}.`;
+          summaryEl.hidden = false;
+          const sitemapBlock =
+            data.source === "sitemap" && data.sitemaps?.length
+              ? `<p><strong>Sitemaps used:</strong></p><ul>${data.sitemaps.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>`
+              : `<p><strong>Source:</strong> no sitemap — crawled same-domain links from the site (e.g. /about).</p>`;
+          summaryEl.innerHTML = `
+            <p><strong>Site:</strong> ${escapeHtml(data.site_url)}</p>
+            ${sitemapBlock}
+          `;
+
+          for (const page of data.pages) {
+            const article = document.createElement("article");
+            article.className = page.ok ? "page ok" : "page fail";
+            article.innerHTML = `
+              <h2><a href="${escapeAttr(page.url)}" target="_blank" rel="noopener">${escapeHtml(page.url)}</a></h2>
+              <p class="meta">${page.ok ? "OK" : "Failed"} ${page.status ?? ""} ${page.error ? "— " + escapeHtml(page.error) : ""}</p>
+              <pre>${escapeHtml(page.content || "")}</pre>
+            `;
+            resultsEl.appendChild(article);
+          }
+        } catch (err) {
+          statusEl.textContent = "Request failed: " + err.message;
+        } finally {
+          form.querySelector("button").disabled = false;
+        }
+      });
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;");
+      }
+
+      function escapeAttr(value) {
+        return escapeHtml(value).replaceAll("'", "&#39;");
+      }
+    </script>
+  </body>
+</html>

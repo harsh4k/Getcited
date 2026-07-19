@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Log in — GetCited</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <nav class="topnav">
+      <a href="/login" aria-current="page">Log in</a>
+      <a href="/register">Create account</a>
+    </nav>
+    <main class="auth-main">
+      <h1>Log in</h1>
+      <p>Sign in to use Sitemap Crawler, Ad Hotspots, and A/B Testing.</p>
+      {% if error %}
+      <p class="status auth-error">{{ error }}</p>
+      {% endif %}
+      <form method="post" class="auth-form">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" required />
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+        <button type="submit">Log in</button>
+      </form>
+      <p class="hint">No account yet? <a href="/register">Create one</a>.</p>
+    </main>
+  </body>
+</html>

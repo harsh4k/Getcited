@@ -1,0 +1,194 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Getcited design tokens — dark-first, warm near-black + indigo accent.
+   --accent is the single swap point for the brand color. */
+:root {
+  --bg-primary: #131110;
+  --bg-secondary: #1c1917;
+  --bg-tertiary: #292420;
+  --bg-hover: #322c27;
+
+  /* Brightened for legibility over the video backdrop — keep tertiary ≥ #8d867f */
+  --text-primary: #f5f1ec;
+  --text-secondary: #beb8b1;
+  --text-tertiary: #8d867f;
+
+  --border: #2e2925;
+  --border-hover: #453d36;
+
+  --accent: #818CF8;
+  --accent-hover: #A5B4FC;
+  --accent-fg: #131110;
+
+  --glass-bg: rgba(255, 255, 255, 0.01);
+  --glass-highlight: rgba(255, 255, 255, 0.1);
+
+  --folder-back: #4338CA;
+  --folder-front: #6366F1;
+  --folder-tab: #5558E6;
+
+  /* shadcn/ui compat tokens — mapped to existing design */
+  --background: #131110;
+  --foreground: #f5f1ec;
+  --card: #1c1917;
+  --card-foreground: #f5f1ec;
+  --popover: #1c1917;
+  --popover-foreground: #f5f1ec;
+  --primary: #818CF8;
+  --primary-foreground: #131110;
+  --secondary: #292420;
+  --secondary-foreground: #beb8b1;
+  --muted: #292420;
+  --muted-foreground: #beb8b1;
+  --accent-shad: #818CF8;
+  --accent-shad-foreground: #131110;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --input: #2e2925;
+  --ring: #818CF8;
+}
+
+@theme inline {
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-tertiary: var(--bg-tertiary);
+  --color-bg-hover: var(--bg-hover);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-border: var(--border);
+  --color-border-hover: var(--border-hover);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-folder-back: var(--folder-back);
+  --color-folder-front: var(--folder-front);
+  --color-folder-tab: var(--folder-tab);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
+  --font-display: var(--font-space-grotesk);
+
+  /* shadcn/ui compat */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+@layer base {
+  body {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: var(--font-sans), sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display), var(--font-sans), sans-serif;
+  }
+}
+
+/* Liquid glass pill — nearly transparent white with a gradient border stroke.
+   Lives in @layer components so bg-* utilities can override the background. */
+@layer components {
+  .liquid-glass {
+    position: relative;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.03);
+    background-blend-mode: luminosity;
+    /* 16px (was 4px): calms the video behind glass cards so text stays readable */
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    border: none;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  }
+}
+
+.liquid-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.4px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.45) 0%,
+    rgba(255, 255, 255, 0.15) 20%,
+    rgba(255, 255, 255, 0) 40%,
+    rgba(255, 255, 255, 0) 60%,
+    rgba(255, 255, 255, 0.15) 80%,
+    rgba(255, 255, 255, 0.45) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Bottom-only blur over the hero video — no dark gradient, blur only.
+   Element covers only the bottom half: backdrop-filter cost scales with
+   painted area, and the top 55% was fully masked out anyway. */
+.hero-bottom-blur {
+  position: fixed;
+  inset: 50% 0 0 0;
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  -webkit-mask-image: linear-gradient(to top, black 0%, transparent 90%);
+  mask-image: linear-gradient(to top, black 0%, transparent 90%);
+  pointer-events: none;
+}
+
+@keyframes blurFadeUp {
+  from {
+    opacity: 0;
+    filter: blur(20px);
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+/* fill-mode "both": elements stay hidden during their animation-delay window */
+.animate-blur-fade-up {
+  animation: blurFadeUp 1s ease-out both;
+}
+
+/* Scroll-driven reveal — native CSS, no JS. Browsers without
+   animation-timeline support just play the fade once on load. */
+.scroll-reveal {
+  animation: blurFadeUp 0.9s ease-out both;
+}
+
+@supports (animation-timeline: view()) {
+  .scroll-reveal {
+    animation-timeline: view();
+    animation-range: entry 0% entry 55%;
+    animation-duration: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-blur-fade-up,
+  .scroll-reveal {
+    animation: none;
+  }
+}

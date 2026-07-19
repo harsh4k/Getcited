@@ -1,0 +1,13 @@
+Flask==3.1.1
+httpx==0.28.1
+beautifulsoup4==4.13.4
+lxml==5.4.0
+playwright==1.51.0
+Pillow==11.2.1
+numpy==2.4.6
+torch==2.7.1
+torchvision==0.22.1
+einops==0.8.2
+transformers==5.14.1
+git+https://github.com/openai/CLIP.git@d05afc436d78f1c48dc0dbf8e5980a9d471f35f6
+git+https://github.com/matthias-k/DeepGaze.git@c87b106e8698497c59998b469c45770e993baca3
