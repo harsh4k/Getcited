@@ -1,18 +1,12 @@
-import { Backdrop } from "@/components/marketing/Backdrop";
-import { Navbar } from "@/components/marketing/Navbar";
 import { Banner } from "@/components/ui/banner";
 
-export default function MarketingLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function BannerDemo() {
   return (
-    <>
+    <div className="w-full p-10">
       <Banner
-        id="getcited-launch"
+        id="banner-id"
         variant="rainbow"
-        className="border-b border-border bg-bg-primary"
+        className="bg-bg-primary shadow-lg dark:bg-transparent"
         rainbowColors={[
           "rgba(129,140,248,0.85)",
           "rgba(129,140,248,0.85)",
@@ -25,9 +19,6 @@ export default function MarketingLayout({
       >
         Project evolving — more features soon.
       </Banner>
-      <Backdrop />
-      <Navbar />
-      {children}
-    </>
+    </div>
   );
 }

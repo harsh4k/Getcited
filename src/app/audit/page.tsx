@@ -914,7 +914,7 @@ export default function AuditPage() {
                           </span>
                         </div>
                         <div className="mt-4 grid gap-2">
-                          {crawlPages.slice(0, 30).map((page) => {
+                          {crawlPages.map((page) => {
                             const aeoLoading = pageActionLoading === `aeo-${page.url}`;
                             const adsLoading = pageActionLoading === `ads-${page.url}`;
                             const busy = pageActionLoading !== null || refreshing;

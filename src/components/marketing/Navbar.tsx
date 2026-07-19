@@ -46,8 +46,10 @@ export function Navbar() {
   return (
     <header
       className={cn(
-        "fixed inset-x-0 z-50 transition-all duration-300",
-        scrolled ? "top-2 sm:top-4" : "top-0"
+        "fixed inset-x-0 z-50 transition-[top] duration-300",
+        scrolled
+          ? "top-[calc(var(--banner-height,0px)+0.5rem)] sm:top-[calc(var(--banner-height,0px)+1rem)]"
+          : "top-[var(--banner-height,0px)]",
       )}
     >
       <nav

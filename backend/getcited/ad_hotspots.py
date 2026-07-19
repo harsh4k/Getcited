@@ -21,7 +21,10 @@ from saliency_model import (
 VIEWPORT = {"width": 1440, "height": 900}
 MAX_HOTSPOTS = 8
 NAV_TIMEOUT_MS = 45_000
-SETTLE_TIMEOUT_MS = 12_000
+SETTLE_TIMEOUT_MS = 15_000
+# Chromium full-page screenshots silently clip beyond ~16k px; stitch below that.
+MAX_SINGLE_SHOT_HEIGHT = 14_000
+MAX_SCROLL_STEPS = 60
 
 # Playwright sync API is not safe across threads; serialize captures.
 _ANALYZE_LOCK = threading.Lock()
@@ -405,7 +408,7 @@ def _draw_hotspots(image: Image.Image, hotspots: list[Hotspot]) -> Image.Image:
 
 
 def _wait_for_page_ready(page) -> None:
-    """Scroll enough for layout/lazy content without multi-minute hangs."""
+    """Scroll and force-paint so lazy / animated sections appear in the screenshot."""
     try:
         page.wait_for_load_state("networkidle", timeout=SETTLE_TIMEOUT_MS)
     except PlaywrightTimeout:
@@ -419,25 +422,86 @@ def _wait_for_page_ready(page) -> None:
     except Exception:  # noqa: BLE001
         pass
 
+    # Dismiss common consent / overlay blockers that hide page content.
     page.evaluate(
         """
         () => {
-          document.querySelectorAll('img[loading="lazy"]').forEach((img) => {
+          const clickTexts = [
+            'accept', 'accept all', 'accept cookies', 'agree', 'i agree',
+            'got it', 'allow all', 'allow cookies', 'continue', 'ok',
+          ];
+          const nodes = Array.from(
+            document.querySelectorAll('button, [role="button"], a, input[type="button"]')
+          );
+          for (const el of nodes) {
+            const label = ((el.innerText || el.textContent || el.getAttribute('aria-label') || '') + '')
+              .trim()
+              .toLowerCase();
+            if (!label || label.length > 40) continue;
+            if (clickTexts.some((t) => label === t || label.includes(t))) {
+              try { el.click(); } catch (_) {}
+              break;
+            }
+          }
+          document
+            .querySelectorAll('[id*="cookie" i], [class*="cookie" i], [id*="consent" i], [class*="consent" i]')
+            .forEach((el) => {
+              const style = window.getComputedStyle(el);
+              if (style.position === 'fixed' || style.position === 'sticky') {
+                el.style.setProperty('display', 'none', 'important');
+              }
+            });
+        }
+        """
+    )
+
+    page.evaluate(
+        """
+        () => {
+          // Eager-load lazy media and CSS content-visibility blank regions.
+          const style = document.createElement('style');
+          style.setAttribute('data-getcited', 'force-paint');
+          style.textContent = `
+            *, *::before, *::after {
+              content-visibility: visible !important;
+              animation-delay: 0s !important;
+              animation-duration: 0s !important;
+              transition: none !important;
+              scroll-behavior: auto !important;
+            }
+            html { scroll-behavior: auto !important; }
+          `;
+          document.head.appendChild(style);
+
+          document.querySelectorAll('img[loading="lazy"], img[data-src], img[data-lazy-src]').forEach((img) => {
             img.loading = 'eager';
-            if (img.dataset && img.dataset.src && !img.src) img.src = img.dataset.src;
-            if (img.dataset && img.dataset.srcset && !img.srcset) img.srcset = img.dataset.srcset;
+            img.removeAttribute('loading');
+            const ds = img.dataset || {};
+            if (ds.src && (!img.src || img.src.startsWith('data:'))) img.src = ds.src;
+            if (ds.lazySrc && (!img.src || img.src.startsWith('data:'))) img.src = ds.lazySrc;
+            if (ds.srcset && !img.srcset) img.srcset = ds.srcset;
+            if (ds.original && (!img.src || img.src.startsWith('data:'))) img.src = ds.original;
           });
-          document.querySelectorAll('source[data-srcset]').forEach((s) => {
-            if (!s.srcset) s.srcset = s.dataset.srcset;
+          document.querySelectorAll('source[data-srcset], source[data-src]').forEach((s) => {
+            if (s.dataset.srcset && !s.srcset) s.srcset = s.dataset.srcset;
+            if (s.dataset.src && !s.src) s.src = s.dataset.src;
+          });
+          document.querySelectorAll('video[data-src], iframe[data-src]').forEach((el) => {
+            if (el.dataset.src && !el.src) el.src = el.dataset.src;
+          });
+          document.querySelectorAll('[style*="background"]').forEach((el) => {
+            // Nudge background-image paint after scroll
+            const bg = el.style.backgroundImage;
+            if (bg) el.style.backgroundImage = bg;
           });
         }
         """
     )
 
-    # One progressive scroll pass — enough for most lazy sections, capped hard.
+    # Progressive scroll — triggers IntersectionObserver / lazy sections on tall pages.
     page.evaluate(
-        """
-        async () => {
+        f"""
+        async () => {{
           const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
           const getHeight = () =>
             Math.max(
@@ -447,15 +511,62 @@ def _wait_for_page_ready(page) -> None:
             );
 
           let height = getHeight();
-          const step = Math.max(400, Math.floor(window.innerHeight * 0.75));
+          const step = Math.max(350, Math.floor(window.innerHeight * 0.7));
           let guard = 0;
-          for (let y = 0; y < height + step && guard < 28; y += step, guard++) {
-            window.scrollTo({ top: y, left: 0, behavior: 'instant' });
-            await sleep(120);
+          for (let y = 0; y < height + step && guard < {MAX_SCROLL_STEPS}; y += step, guard++) {{
+            window.scrollTo({{ top: y, left: 0, behavior: 'instant' }});
+            await sleep(160);
             height = getHeight();
-          }
-          window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-          await sleep(200);
+          }}
+          window.scrollTo({{ top: 0, left: 0, behavior: 'instant' }});
+          await sleep(250);
+        }}
+        """
+    )
+
+    # Force common "reveal on scroll" / Framer / AOS patterns to visible.
+    page.evaluate(
+        """
+        () => {
+          const revealSelectors = [
+            '[data-aos]',
+            '.aos-init',
+            '.reveal',
+            '.fade-in',
+            '.fadeIn',
+            '.fade-up',
+            '.slide-up',
+            '[data-animate]',
+            '[data-framer-appear-id]',
+            '[data-framer-component-type]',
+            '[class*="animate-"]',
+            '[class*="Animate"]',
+            '.opacity-0',
+            '[style*="opacity: 0"]',
+            '[style*="opacity:0"]',
+          ];
+          document.querySelectorAll(revealSelectors.join(',')).forEach((el) => {
+            el.classList.add('aos-animate', 'is-visible', 'in-view', 'visible', 'show');
+            el.classList.remove('opacity-0', 'invisible', 'hidden');
+            el.style.setProperty('opacity', '1', 'important');
+            el.style.setProperty('visibility', 'visible', 'important');
+            el.style.setProperty('transform', 'none', 'important');
+            el.style.setProperty('filter', 'none', 'important');
+            el.style.setProperty('clip-path', 'none', 'important');
+          });
+
+          // Catch remaining laid-out but invisible blocks (animation left them at opacity 0).
+          document.querySelectorAll('main *, section *, article *, header *, footer *').forEach((el) => {
+            const style = window.getComputedStyle(el);
+            const r = el.getBoundingClientRect();
+            if (r.width < 8 || r.height < 8) return;
+            const opacity = parseFloat(style.opacity || '1');
+            if (opacity === 0 || style.visibility === 'hidden') {
+              el.style.setProperty('opacity', '1', 'important');
+              el.style.setProperty('visibility', 'visible', 'important');
+              el.style.setProperty('transform', 'none', 'important');
+            }
+          });
         }
         """
     )
@@ -464,7 +575,7 @@ def _wait_for_page_ready(page) -> None:
         """
         async () => {
           const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-          const imgs = Array.from(document.images || []).slice(0, 80);
+          const imgs = Array.from(document.images || []).slice(0, 120);
           await Promise.race([
             Promise.all(
               imgs.map((img) => {
@@ -477,49 +588,110 @@ def _wait_for_page_ready(page) -> None:
                 });
               })
             ),
-            sleep(4000),
+            sleep(6000),
           ]);
         }
         """
     )
 
+    page.wait_for_timeout(400)
+
+
+def _capture_full_page(page) -> bytes:
+    """Capture the full page, stitching viewport shots when height exceeds Chromium limits."""
+    metrics = page.evaluate(
+        """
+        () => ({
+          width: Math.max(
+            document.documentElement.scrollWidth,
+            document.body ? document.body.scrollWidth : 0,
+            document.documentElement.clientWidth
+          ),
+          height: Math.max(
+            document.documentElement.scrollHeight,
+            document.body ? document.body.scrollHeight : 0,
+            document.documentElement.clientHeight
+          ),
+          viewportHeight: window.innerHeight,
+          viewportWidth: window.innerWidth,
+          dpr: window.devicePixelRatio || 1,
+        })
+        """
+    )
+    page_h = int(metrics.get("height") or 0)
+    if page_h <= MAX_SINGLE_SHOT_HEIGHT:
+        return page.screenshot(full_page=True, type="png")
+
+    viewport_h = max(int(metrics.get("viewportHeight") or VIEWPORT["height"]), 1)
+    # Hide sticky/fixed chrome that would repeat in every stitch tile.
     page.evaluate(
         """
         () => {
-          const style = document.createElement('style');
-          style.setAttribute('data-getcited', 'settle');
-          style.textContent = `
-            html { scroll-behavior: auto !important; }
-            *, *::before, *::after {
-              animation-delay: 0s !important;
-              animation-duration: 0.01s !important;
-              transition-delay: 0s !important;
-              transition-duration: 0.01s !important;
+          window.__getcitedFixed = [];
+          document.querySelectorAll('*').forEach((el) => {
+            const style = window.getComputedStyle(el);
+            if (style.position === 'fixed' || style.position === 'sticky') {
+              window.__getcitedFixed.push([el, el.style.getPropertyValue('visibility')]);
+              el.style.setProperty('visibility', 'hidden', 'important');
             }
-          `;
-          document.head.appendChild(style);
-
-          const revealSelectors = [
-            '[data-aos]',
-            '.aos-init',
-            '.reveal',
-            '.fade-in',
-            '.fadeIn',
-            '[data-animate]',
-            '[data-framer-component-type]',
-          ];
-          document.querySelectorAll(revealSelectors.join(',')).forEach((el) => {
-            el.classList.add('aos-animate', 'is-visible', 'in-view', 'visible');
-            el.style.opacity = '1';
-            el.style.visibility = 'visible';
-            el.style.transform = 'none';
-            el.style.filter = 'none';
           });
         }
         """
     )
+    tiles: list[Image.Image] = []
+    try:
+        y = 0
+        while y < page_h:
+            page.evaluate(f"window.scrollTo(0, {y})")
+            page.wait_for_timeout(120)
+            shot = page.screenshot(type="png", full_page=False)
+            tiles.append(Image.open(io.BytesIO(shot)).convert("RGB"))
+            y += viewport_h
+            if len(tiles) > 40:
+                break
+    finally:
+        page.evaluate(
+            """
+            () => {
+              (window.__getcitedFixed || []).forEach(([el, prev]) => {
+                if (prev) el.style.setProperty('visibility', prev);
+                else el.style.removeProperty('visibility');
+              });
+              window.scrollTo(0, 0);
+            }
+            """
+        )
 
-    page.wait_for_timeout(250)
+    if not tiles:
+        return page.screenshot(full_page=True, type="png")
+
+    scale = tiles[0].height / float(viewport_h)
+    canvas_h = max(tiles[0].height, int(page_h * scale))
+    canvas = Image.new("RGB", (tiles[0].width, canvas_h))
+    offset = 0
+    remaining = canvas.height
+    for tile in tiles:
+        crop_h = min(tile.height, remaining)
+        if crop_h <= 0:
+            break
+        if crop_h < tile.height:
+            tile = tile.crop((0, 0, tile.width, crop_h))
+        canvas.paste(tile, (0, offset))
+        offset += crop_h
+        remaining -= crop_h
+        if remaining <= 0:
+            break
+
+    # Restore fixed/sticky header on the top strip for a natural look.
+    page.evaluate("window.scrollTo(0, 0)")
+    page.wait_for_timeout(100)
+    top = Image.open(io.BytesIO(page.screenshot(type="png", full_page=False))).convert("RGB")
+    header_h = min(top.height, int(180 * scale))
+    canvas.paste(top.crop((0, 0, top.width, header_h)), (0, 0))
+
+    buf = io.BytesIO()
+    canvas.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def analyze_ad_hotspots(raw_url: str) -> dict:
@@ -553,7 +725,7 @@ def analyze_ad_hotspots(raw_url: str) -> dict:
                     _wait_for_page_ready(page)
                     final_url = page.url
                     layout = page.evaluate(LAYOUT_SCRIPT)
-                    screenshot_bytes = page.screenshot(full_page=True, type="png", animations="disabled")
+                    screenshot_bytes = _capture_full_page(page)
                 except PlaywrightTimeout as exc:
                     raise ValueError(f"Timed out loading page: {exc}") from exc
                 finally:

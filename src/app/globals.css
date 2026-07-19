@@ -4,12 +4,15 @@
 /* Getcited design tokens — dark-first, warm near-black + indigo accent.
    --accent is the single swap point for the brand color. */
 :root {
+  /* Reserved by Banner when open so fixed nav stays clear of it */
+  --banner-height: 0px;
+
   --bg-primary: #131110;
   --bg-secondary: #1c1917;
   --bg-tertiary: #292420;
   --bg-hover: #322c27;
 
-  /* Brightened for legibility over the video backdrop — keep tertiary ≥ #8d867f */
+  /* Brightened for legibility over the animated backdrop — keep tertiary ≥ #8d867f */
   --text-primary: #f5f1ec;
   --text-secondary: #beb8b1;
   --text-tertiary: #8d867f;
@@ -111,7 +114,7 @@
     overflow: hidden;
     background: rgba(255, 255, 255, 0.03);
     background-blend-mode: luminosity;
-    /* 16px (was 4px): calms the video behind glass cards so text stays readable */
+    /* 16px (was 4px): calms the backdrop behind glass cards so text stays readable */
     -webkit-backdrop-filter: blur(16px);
     backdrop-filter: blur(16px);
     border: none;
@@ -138,19 +141,6 @@
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  pointer-events: none;
-}
-
-/* Bottom-only blur over the hero video — no dark gradient, blur only.
-   Element covers only the bottom half: backdrop-filter cost scales with
-   painted area, and the top 55% was fully masked out anyway. */
-.hero-bottom-blur {
-  position: fixed;
-  inset: 50% 0 0 0;
-  -webkit-backdrop-filter: blur(24px);
-  backdrop-filter: blur(24px);
-  -webkit-mask-image: linear-gradient(to top, black 0%, transparent 90%);
-  mask-image: linear-gradient(to top, black 0%, transparent 90%);
   pointer-events: none;
 }
 
