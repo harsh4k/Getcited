@@ -101,7 +101,12 @@ def login_required(view):
     def wrapped(*args, **kwargs):
         user = current_user()
         if not user:
-            if request.path.startswith("/ab/") or request.path.startswith("/crawl") or request.path.startswith("/ads/"):
+            if (
+                request.path.startswith("/ab/")
+                or request.path.startswith("/crawl")
+                or request.path.startswith("/ads/")
+                or request.path.startswith("/audits")
+            ):
                 return jsonify({"error": "Authentication required."}), 401
             return redirect(url_for("login", next=request.path))
         return view(*args, **kwargs)

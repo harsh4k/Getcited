@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { LogOut, ShieldCheck, Trash2, UserCircle } from "lucide-react";
 import { PageShell } from "@/components/layout/PageShell";
-import { clearHistory, getHistory } from "@/lib/history";
+import { api } from "@/lib/api";
+import { clearHistory } from "@/lib/history";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
 export default function SettingsPage() {
@@ -14,6 +15,7 @@ export default function SettingsPage() {
   const [checked, setChecked] = useState(false);
   const [historyCount, setHistoryCount] = useState(0);
   const [cleared, setCleared] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   useEffect(() => {
     supabaseBrowser()
@@ -22,7 +24,12 @@ export default function SettingsPage() {
         setUser(data.user);
         setChecked(true);
       });
-    const hydrate = window.setTimeout(() => setHistoryCount(getHistory().length), 0);
+    const hydrate = window.setTimeout(() => {
+      void api
+        .listAudits()
+        .then((data) => setHistoryCount(data.audits.length))
+        .catch(() => setHistoryCount(0));
+    }, 0);
     return () => window.clearTimeout(hydrate);
   }, []);
 
@@ -31,10 +38,18 @@ export default function SettingsPage() {
     router.push("/auth/login");
   };
 
-  const handleClearHistory = () => {
-    clearHistory();
-    setHistoryCount(0);
-    setCleared(true);
+  const handleClearHistory = async () => {
+    setClearing(true);
+    try {
+      await api.clearAudits();
+      clearHistory();
+      setHistoryCount(0);
+      setCleared(true);
+    } catch {
+      // keep count
+    } finally {
+      setClearing(false);
+    }
   };
 
   const name = (user?.user_metadata?.full_name as string | undefined) || user?.email?.split("@")[0];
@@ -42,7 +57,7 @@ export default function SettingsPage() {
   const provider = user?.app_metadata?.provider ?? "google";
 
   return (
-    <PageShell title="Settings" subtitle="Your account and local data.">
+    <PageShell title="Settings" subtitle="Your account and saved audits.">
       {checked && !user && (
         <div className="liquid-glass rounded-2xl bg-bg-primary/25 p-8 text-center">
           <p className="text-sm text-text-secondary">You are not signed in.</p>
@@ -75,17 +90,18 @@ export default function SettingsPage() {
           </div>
 
           <div className="liquid-glass rounded-2xl bg-bg-primary/25 p-6">
-            <h2 className="text-sm font-semibold text-text-primary">Local data</h2>
+            <h2 className="text-sm font-semibold text-text-primary">Saved audits</h2>
             <p className="mt-1 text-xs text-text-secondary">
-              Audit history is stored in this browser ({historyCount} {historyCount === 1 ? "entry" : "entries"}).
+              Audit snapshots (pages, AEO writeups, ad placements) are stored on your account (
+              {historyCount} {historyCount === 1 ? "audit" : "audits"}).
             </p>
             <button
-              onClick={handleClearHistory}
-              disabled={historyCount === 0}
+              onClick={() => void handleClearHistory()}
+              disabled={historyCount === 0 || clearing}
               className="mt-4 flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs text-text-secondary transition-colors hover:bg-white/15 hover:text-text-primary disabled:opacity-40"
             >
               <Trash2 size={13} />
-              {cleared ? "History cleared" : "Clear audit history"}
+              {cleared ? "History cleared" : clearing ? "Clearing…" : "Clear audit history"}
             </button>
           </div>
 

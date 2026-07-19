@@ -3,14 +3,29 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { User } from "@supabase/supabase-js";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { BarChart3, LayoutDashboard, LogOut, Menu, Settings, UserCircle } from "lucide-react";
-import { supabaseBrowser } from "@/lib/supabase/client";
 
-export function ProfileMenu({ onMenuToggle }: { onMenuToggle?: () => void }) {
+import { supabaseBrowser } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
+
+interface ProfileMenuProps {
+  onMenuToggle?: () => void;
+  /** floating = absolute (audit/ab pages); inline = sits in navbar flow */
+  variant?: "floating" | "inline";
+  className?: string;
+  buttonClassName?: string;
+}
+
+export function ProfileMenu({
+  onMenuToggle,
+  variant = "floating",
+  className,
+  buttonClassName,
+}: ProfileMenuProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
   const [checked, setChecked] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -43,6 +58,7 @@ export function ProfileMenu({ onMenuToggle }: { onMenuToggle?: () => void }) {
   if (!checked) return null;
 
   if (!user) {
+    if (variant === "inline") return null;
     return (
       <Link
         href="/auth/login"
@@ -61,17 +77,34 @@ export function ProfileMenu({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const avatar = user.user_metadata?.avatar_url as string | undefined;
 
   return (
-    <div ref={ref} className="absolute right-4 top-4 z-40 flex items-center gap-2">
+    <div
+      ref={ref}
+      className={cn(
+        "flex items-center gap-2",
+        variant === "floating" ? "absolute right-4 top-4 z-40" : "relative",
+        className
+      )}
+    >
+      {variant === "floating" && onMenuToggle && (
+        <button
+          type="button"
+          onClick={onMenuToggle}
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-black shadow-lg transition-colors hover:bg-gray-200 md:hidden"
+          aria-label="Open menu"
+        >
+          <Menu size={18} />
+        </button>
+      )}
       <button
-        onClick={onMenuToggle}
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-black shadow-lg transition-colors hover:bg-gray-200 md:hidden"
-        aria-label="Open menu"
-      >
-        <Menu size={18} />
-      </button>
-      <button
+        type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white text-black shadow-lg transition-colors hover:bg-gray-200"
+        className={cn(
+          "flex h-10 w-10 items-center justify-center overflow-hidden rounded-full text-black transition-colors",
+          variant === "floating"
+            ? "bg-white shadow-lg hover:bg-gray-200"
+            : buttonClassName,
+          !buttonClassName && variant === "inline" && "bg-white shadow-lg hover:bg-gray-200"
+        )}
         aria-label="Profile"
         aria-expanded={open}
       >
@@ -83,7 +116,7 @@ export function ProfileMenu({ onMenuToggle }: { onMenuToggle?: () => void }) {
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-12 w-56 overflow-hidden rounded-xl border border-white/10 bg-bg-secondary/95 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute right-0 top-12 z-50 w-56 overflow-hidden rounded-xl border border-white/10 bg-bg-secondary/95 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
           <div className="border-b border-white/10 px-4 py-3">
             <p className="truncate text-sm font-medium text-text-primary">{name}</p>
             <p className="truncate text-[11px] text-text-tertiary">{user.email}</p>
@@ -107,6 +140,7 @@ export function ProfileMenu({ onMenuToggle }: { onMenuToggle?: () => void }) {
           </div>
           <div className="border-t border-white/10 py-1">
             <button
+              type="button"
               onClick={signOut}
               className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-red-400 transition-colors hover:bg-red-500/10"
             >

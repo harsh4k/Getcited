@@ -4,20 +4,20 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BarChart3, Globe, Plus, Sparkles, Zap } from "lucide-react";
 import { PageShell } from "@/components/layout/PageShell";
-import { getHistory, type HistoryEntry } from "@/lib/history";
+import { api, type AuditSummary } from "@/lib/api";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
-function num(entry: HistoryEntry, key: string): number {
-  const v = entry.result?.[key];
-  return typeof v === "number" ? v : 0;
-}
-
 export default function DashboardPage() {
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [audits, setAudits] = useState<AuditSummary[]>([]);
   const [name, setName] = useState<string | null>(null);
 
   useEffect(() => {
-    const hydrate = window.setTimeout(() => setHistory(getHistory()), 0);
+    const hydrate = window.setTimeout(() => {
+      void api
+        .listAudits()
+        .then((data) => setAudits(data.audits))
+        .catch(() => setAudits([]));
+    }, 0);
     supabaseBrowser()
       .auth.getUser()
       .then(({ data }) => {
@@ -29,12 +29,12 @@ export default function DashboardPage() {
     return () => window.clearTimeout(hydrate);
   }, []);
 
-  const sites = new Set(history.map((h) => h.url)).size;
-  const pagesCrawled = history.reduce((sum, h) => sum + num(h, "pageCount"), 0);
-  const optimized = history.reduce((sum, h) => sum + num(h, "optimizedPages"), 0);
+  const sites = new Set(audits.map((h) => h.url)).size;
+  const pagesCrawled = audits.reduce((sum, h) => sum + h.active_page_count, 0);
+  const optimized = audits.reduce((sum, h) => sum + h.aeo_count, 0);
 
   const stats = [
-    { icon: Sparkles, label: "Audits run", value: history.length },
+    { icon: Sparkles, label: "Audits run", value: audits.length },
     { icon: Globe, label: "Sites analyzed", value: sites },
     { icon: BarChart3, label: "Pages crawled", value: pagesCrawled },
     { icon: Zap, label: "Pages optimized", value: optimized },
@@ -66,7 +66,7 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {history.length === 0 ? (
+      {audits.length === 0 ? (
         <div className="liquid-glass mt-4 rounded-2xl bg-bg-primary/25 p-10 text-center">
           <p className="text-sm text-text-secondary">No audits yet.</p>
           <p className="mt-1 text-xs text-text-tertiary">
@@ -75,22 +75,22 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="mt-4 space-y-2">
-          {history.slice(0, 8).map((entry) => (
+          {audits.slice(0, 8).map((entry) => (
             <Link
               key={entry.id}
-              href="/audit"
+              href={`/audit?id=${entry.id}`}
               className="liquid-glass flex items-center justify-between rounded-2xl bg-bg-primary/25 px-5 py-3.5 transition-colors hover:bg-white/10"
             >
               <div className="min-w-0">
                 <p className="truncate font-mono text-xs text-text-primary">
-                  {entry.url.replace(/^https?:\/\//, "")}
+                  {(entry.name || entry.url).replace(/^https?:\/\//, "")}
                 </p>
                 <p className="mt-0.5 text-[11px] text-text-tertiary">
-                  {entry.tool} · {new Date(entry.timestamp).toLocaleString()}
+                  Analysis · {new Date(entry.refreshed_at).toLocaleString()}
                 </p>
               </div>
               <span className="ml-4 shrink-0 text-[11px] text-text-tertiary">
-                {num(entry, "pageCount") > 0 && `${num(entry, "pageCount")} pages`}
+                {entry.active_page_count > 0 && `${entry.active_page_count} pages`}
               </span>
             </Link>
           ))}

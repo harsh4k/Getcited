@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { Backdrop } from "@/components/marketing/Backdrop";
 
 export default function AuditLayout({
@@ -8,7 +9,15 @@ export default function AuditLayout({
   return (
     <>
       <Backdrop />
-      {children}
+      <Suspense
+        fallback={
+          <div className="flex h-dvh items-center justify-center text-sm text-text-secondary">
+            Loading audit…
+          </div>
+        }
+      >
+        {children}
+      </Suspense>
     </>
   );
 }

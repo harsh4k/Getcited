@@ -3,12 +3,7 @@
 import { useEffect, useState } from "react";
 import { BadgeCheck, Globe, Sparkles, Zap } from "lucide-react";
 import { PageShell } from "@/components/layout/PageShell";
-import { getHistory, type HistoryEntry } from "@/lib/history";
-
-function num(entry: HistoryEntry, key: string): number {
-  const v = entry.result?.[key];
-  return typeof v === "number" ? v : 0;
-}
+import { api, type AuditSummary } from "@/lib/api";
 
 const INCLUDED = [
   "Unlimited GEO audits",
@@ -19,17 +14,30 @@ const INCLUDED = [
 ];
 
 export default function BillingPage() {
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [audits, setAudits] = useState<AuditSummary[]>([]);
 
   useEffect(() => {
-    const hydrate = window.setTimeout(() => setHistory(getHistory()), 0);
+    const hydrate = window.setTimeout(() => {
+      void api
+        .listAudits()
+        .then((data) => setAudits(data.audits))
+        .catch(() => setAudits([]));
+    }, 0);
     return () => window.clearTimeout(hydrate);
   }, []);
 
   const usage = [
-    { icon: Sparkles, label: "Audits run", value: history.length },
-    { icon: Globe, label: "Pages crawled", value: history.reduce((s, h) => s + num(h, "pageCount"), 0) },
-    { icon: Zap, label: "Pages optimized", value: history.reduce((s, h) => s + num(h, "optimizedPages"), 0) },
+    { icon: Sparkles, label: "Audits run", value: audits.length },
+    {
+      icon: Globe,
+      label: "Pages crawled",
+      value: audits.reduce((s, h) => s + h.active_page_count, 0),
+    },
+    {
+      icon: Zap,
+      label: "Pages optimized",
+      value: audits.reduce((s, h) => s + h.aeo_count, 0),
+    },
   ];
 
   return (
@@ -69,7 +77,7 @@ export default function BillingPage() {
             </div>
           ))}
           <p className="px-1 text-[11px] leading-relaxed text-text-tertiary">
-            Usage is counted from audits run in this browser. No payment method required.
+            Usage is counted from audits saved to your account. No payment method required.
           </p>
         </div>
       </div>

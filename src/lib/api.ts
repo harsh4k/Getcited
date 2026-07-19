@@ -101,6 +101,81 @@ export interface GeoPipelineResult {
   optimizedWriteup: string;
 }
 
+export interface AdsAnalyzeResult {
+  url?: string;
+  final_url: string;
+  page_width?: number;
+  page_height?: number;
+  model?: string;
+  hotspot_count: number;
+  hotspots: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    score: number;
+    label: string;
+    reason: string;
+  }[];
+  image_base64: string;
+  warning: string | null;
+  error: string | null;
+}
+
+export interface AuditPageSnapshot {
+  id: number;
+  audit_id: number;
+  url: string;
+  content: string;
+  content_hash: string;
+  status: number | null;
+  ok: boolean;
+  error: string | null;
+  state: "active" | "deleted" | string;
+  first_seen_at: string;
+  last_seen_at: string;
+  aeo: GeoPipelineResult | null;
+  aeo_source_hash: string | null;
+  aeo_generated_at: string | null;
+  aeo_outdated: boolean;
+  ads: AdsAnalyzeResult | null;
+  ads_source_hash: string | null;
+  ads_generated_at: string | null;
+  ads_outdated: boolean;
+}
+
+export interface AuditSummary {
+  id: number;
+  user_id: number;
+  url: string;
+  name: string | null;
+  site_url: string | null;
+  source: string | null;
+  sitemap_found: boolean;
+  link_count: number;
+  created_at: string;
+  refreshed_at: string;
+  page_count: number;
+  active_page_count: number;
+  deleted_page_count: number;
+  aeo_count: number;
+  ads_count: number;
+}
+
+export interface AuditSnapshot extends AuditSummary {
+  pages: AuditPageSnapshot[];
+}
+
+export interface AuditRefreshResult {
+  audit: AuditSnapshot;
+  changes: {
+    created: number;
+    updated: number;
+    deleted: number;
+    unchanged: number;
+  };
+}
+
 async function request<T = Record<string, unknown>>(
   path: string,
   options?: RequestInit
@@ -132,11 +207,57 @@ export const api = {
       source: string;
       sitemaps: string[];
       link_count: number;
-      pages: { url: string; ok: boolean; status: number | null; content: string; error: string | null }[];
+      pages: {
+        url: string;
+        ok: boolean;
+        status: number | null;
+        content: string;
+        error: string | null;
+      }[];
       error: string | null;
     }>("/crawl", {
       method: "POST",
       body: JSON.stringify({ url }),
+    }),
+
+  listAudits: () => request<{ audits: AuditSummary[] }>("/audits", { method: "GET" }),
+
+  createAudit: (url: string) =>
+    request<AuditSnapshot>("/audits", {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    }),
+
+  getAudit: (id: number) => request<AuditSnapshot>(`/audits/${id}`, { method: "GET" }),
+
+  renameAudit: (id: number, name: string) =>
+    request<AuditSnapshot>(`/audits/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
+
+  deleteAudit: (id: number) =>
+    request<{ success: boolean }>(`/audits/${id}`, { method: "DELETE" }),
+
+  clearAudits: () =>
+    request<{ success: boolean; deleted: number }>("/audits", { method: "DELETE" }),
+
+  refreshAudit: (id: number) =>
+    request<AuditRefreshResult>(`/audits/${id}/refresh`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
+  saveAuditAeo: (auditId: number, url: string, aeo: GeoPipelineResult) =>
+    request<AuditPageSnapshot>(`/audits/${auditId}/pages/aeo`, {
+      method: "POST",
+      body: JSON.stringify({ url, aeo }),
+    }),
+
+  saveAuditAds: (auditId: number, url: string, ads: AdsAnalyzeResult) =>
+    request<AuditPageSnapshot>(`/audits/${auditId}/pages/ads`, {
+      method: "POST",
+      body: JSON.stringify({ url, ads }),
     }),
 
   geoPipeline: (url: string, pages: PageData[]) =>
@@ -146,19 +267,7 @@ export const api = {
     }),
 
   adsAnalyze: (url: string) =>
-    request<{
-      url: string;
-      final_url: string;
-      page_width: number;
-      page_height: number;
-      model: string;
-      hotspot_count: number;
-      hotspots: { x: number; y: number; width: number; height: number; score: number; label: string; reason: string }[];
-      image_base64: string;
-      warning: string | null;
-      /** Soft message when heatmap exists but no slot passed filters — not an HTTP failure. */
-      error: string | null;
-    }>("/ads/analyze", {
+    request<AdsAnalyzeResult>("/ads/analyze", {
       method: "POST",
       body: JSON.stringify({ url }),
     }),
@@ -172,6 +281,17 @@ export const api = {
     }),
 
   getSite: (siteId: number) => request<AbSiteDetail>(`/ab/sites/${siteId}`),
+
+  renameSite: (siteId: number, name: string) =>
+    request<SiteData>(`/ab/sites/${siteId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
+
+  deleteSite: (siteId: number) =>
+    request<{ success: boolean }>(`/ab/sites/${siteId}`, {
+      method: "DELETE",
+    }),
 
   createExperiment: (
     siteId: number,
@@ -217,7 +337,10 @@ export const api = {
 
 /** Install snippet — SDK origin is this app so /ab/collect + /ab/config rewrite correctly. */
 export function sdkSnippet(sdkKey: string, origin?: string): string {
-  const base = (origin || (typeof window !== "undefined" ? window.location.origin : "")).replace(/\/$/, "");
+  const base = (origin || (typeof window !== "undefined" ? window.location.origin : "")).replace(
+    /\/$/,
+    ""
+  );
   return `<script src="${base}/sdk.js" data-getcited-key="${sdkKey}" async></script>`;
 }
 

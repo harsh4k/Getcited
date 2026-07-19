@@ -7,6 +7,7 @@ from flask import Flask, jsonify, redirect, render_template, request, url_for
 from ab_store import (
     create_experiment,
     create_site,
+    delete_site,
     experiment_report,
     get_experiment,
     get_running_experiments,
@@ -16,8 +17,20 @@ from ab_store import (
     insert_events,
     list_experiments,
     list_sites,
+    rename_site,
     site_overview,
     update_experiment_status,
+)
+from audit_store import (
+    clear_audits,
+    create_audit_from_crawl,
+    delete_audit,
+    get_audit,
+    list_audits,
+    refresh_audit_from_crawl,
+    rename_audit,
+    save_page_ads,
+    save_page_aeo,
 )
 from auth import (
     authenticate_user,
@@ -179,6 +192,125 @@ def ads_analyze():
     return jsonify(result)
 
 
+@app.route("/audits", methods=["GET", "POST", "DELETE"])
+@login_required
+def audits_collection():
+    user = current_user()
+    if request.method == "GET":
+        return jsonify({"audits": list_audits(user["id"])})
+
+    if request.method == "DELETE":
+        deleted = clear_audits(user["id"])
+        return jsonify({"success": True, "deleted": deleted})
+
+    data = request.get_json(silent=True) or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "Please enter a site URL."}), 400
+    try:
+        crawl = crawl_site(url)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Crawl failed: {exc}"}), 500
+    if crawl.get("error"):
+        return jsonify({"error": crawl["error"]}), 400
+    crawl["pages"] = [
+        p
+        for p in (crawl.get("pages") or [])
+        if p.get("ok") and (p.get("content") or "").strip() and len((p.get("content") or "").strip()) > 50
+    ]
+    audit = create_audit_from_crawl(user["id"], url, crawl)
+    return jsonify(audit), 201
+
+
+@app.route("/audits/<int:audit_id>", methods=["GET", "PATCH", "DELETE"])
+@login_required
+def audit_detail(audit_id: int):
+    user = current_user()
+    if request.method == "GET":
+        audit = get_audit(audit_id, user["id"])
+        if not audit:
+            return jsonify({"error": "Audit not found."}), 404
+        return jsonify(audit)
+
+    if request.method == "PATCH":
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Name is required."}), 400
+        try:
+            updated = rename_audit(audit_id, user["id"], name)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        if not updated:
+            return jsonify({"error": "Audit not found."}), 404
+        return jsonify(updated)
+
+    if not delete_audit(audit_id, user["id"]):
+        return jsonify({"error": "Audit not found."}), 404
+    return jsonify({"success": True})
+
+
+@app.route("/audits/<int:audit_id>/refresh", methods=["POST"])
+@login_required
+def audit_refresh(audit_id: int):
+    user = current_user()
+    audit = get_audit(audit_id, user["id"])
+    if not audit:
+        return jsonify({"error": "Audit not found."}), 404
+    try:
+        crawl = crawl_site(audit["url"])
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Refresh crawl failed: {exc}"}), 500
+    if crawl.get("error"):
+        return jsonify({"error": crawl["error"]}), 400
+    crawl["pages"] = [
+        p
+        for p in (crawl.get("pages") or [])
+        if p.get("ok") and (p.get("content") or "").strip() and len((p.get("content") or "").strip()) > 50
+    ]
+    try:
+        result = refresh_audit_from_crawl(audit_id, user["id"], crawl)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify(result)
+
+
+@app.route("/audits/<int:audit_id>/pages/aeo", methods=["POST"])
+@login_required
+def audit_save_aeo(audit_id: int):
+    user = current_user()
+    data = request.get_json(silent=True) or {}
+    page_url = (data.get("url") or "").strip()
+    aeo = data.get("aeo")
+    if not page_url or not isinstance(aeo, dict):
+        return jsonify({"error": "url and aeo object are required."}), 400
+    try:
+        page = save_page_aeo(audit_id, user["id"], page_url, aeo)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify(page)
+
+
+@app.route("/audits/<int:audit_id>/pages/ads", methods=["POST"])
+@login_required
+def audit_save_ads(audit_id: int):
+    user = current_user()
+    data = request.get_json(silent=True) or {}
+    page_url = (data.get("url") or "").strip()
+    ads = data.get("ads")
+    if not page_url or not isinstance(ads, dict):
+        return jsonify({"error": "url and ads object are required."}), 400
+    try:
+        page = save_page_ads(audit_id, user["id"], page_url, ads)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify(page)
+
+
 @app.route("/ab/sites", methods=["GET", "POST"])
 @login_required
 def ab_sites():
@@ -194,20 +326,38 @@ def ab_sites():
     return jsonify(site), 201
 
 
-@app.route("/ab/sites/<int:site_id>", methods=["GET"])
+@app.route("/ab/sites/<int:site_id>", methods=["GET", "PATCH", "DELETE"])
 @login_required
 def ab_site_detail(site_id: int):
     user = current_user()
     site = get_site(site_id, user["id"])
     if not site:
         return jsonify({"error": "Site not found."}), 404
-    return jsonify(
-        {
-            "site": site,
-            "experiments": list_experiments(site_id),
-            "overview": site_overview(site_id),
-        }
-    )
+
+    if request.method == "GET":
+        return jsonify(
+            {
+                "site": site,
+                "experiments": list_experiments(site_id),
+                "overview": site_overview(site_id),
+            }
+        )
+
+    if request.method == "PATCH":
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "Name is required."}), 400
+        try:
+            updated = rename_site(site_id, user["id"], name)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        if not updated:
+            return jsonify({"error": "Site not found."}), 404
+        return jsonify(updated)
+
+    delete_site(site_id, user["id"])
+    return jsonify({"success": True}), 200
 
 
 @app.route("/ab/sites/<int:site_id>/experiments", methods=["POST"])

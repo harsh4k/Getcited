@@ -87,6 +87,9 @@ def init_db() -> None:
             """
         )
         _purge_demo_data(conn)
+        from audit_store import init_audit_tables
+
+        init_audit_tables(conn)
 
 
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
@@ -199,6 +202,34 @@ def get_site_by_sdk_key(sdk_key: str) -> dict | None:
             (sdk_key,),
         ).fetchone()
     return dict(row) if row else None
+
+
+def rename_site(site_id: int, user_id: int, name: str) -> dict | None:
+    cleaned = name.strip()
+    if not cleaned:
+        raise ValueError("Name is required.")
+    site = get_site(site_id, user_id)
+    if not site:
+        return None
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE sites SET name = ? WHERE id = ? AND user_id = ?",
+            (cleaned, site_id, user_id),
+        )
+    return get_site(site_id, user_id)
+
+
+def delete_site(site_id: int, user_id: int) -> bool:
+    site = get_site(site_id, user_id)
+    if not site:
+        return False
+    with get_db() as conn:
+        # Cascades cover experiments/events when foreign_keys pragma is on;
+        # delete children explicitly so cleanup is reliable either way.
+        conn.execute("DELETE FROM events WHERE site_id = ?", (site_id,))
+        conn.execute("DELETE FROM experiments WHERE site_id = ?", (site_id,))
+        conn.execute("DELETE FROM sites WHERE id = ? AND user_id = ?", (site_id, user_id))
+    return True
 
 
 def create_experiment(

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Menu, User, X } from "lucide-react";
 
+import { ProfileMenu } from "@/components/audit/ProfileMenu";
+import { supabaseBrowser } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
@@ -17,6 +19,7 @@ const NAV_LINKS = [
 export function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -27,6 +30,17 @@ export function Navbar() {
       cancelAnimationFrame(raf);
       window.removeEventListener("scroll", onScroll);
     };
+  }, []);
+
+  useEffect(() => {
+    const supabase = supabaseBrowser();
+    supabase.auth.getUser().then(({ data }) => {
+      setSignedIn(Boolean(data.user));
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSignedIn(Boolean(session?.user));
+    });
+    return () => sub.subscription.unsubscribe();
   }, []);
 
   return (
@@ -100,20 +114,32 @@ export function Navbar() {
           ))}
         </div>
 
-        {/* Right: sign-in + primary Run Audit CTA */}
+        {/* Right: sign-in / profile + primary Run Audit CTA */}
         <div className="flex items-center gap-3">
-          <Link
-            href="/auth/login"
-            className={cn(
-              "animate-blur-fade-up hidden rounded-full px-4 py-2 text-sm font-medium sm:block md:px-6",
-              scrolled
-                ? "bg-white py-2.5 text-black shadow-lg transition-colors hover:bg-gray-200"
-                : "liquid-glass"
-            )}
-            style={{ animationDelay: "350ms" }}
-          >
-            Sign in
-          </Link>
+          {!signedIn ? (
+            <Link
+              href="/auth/login"
+              className={cn(
+                "animate-blur-fade-up hidden rounded-full px-4 py-2 text-sm font-medium sm:block md:px-6",
+                scrolled
+                  ? "bg-white py-2.5 text-black shadow-lg transition-colors hover:bg-gray-200"
+                  : "liquid-glass"
+              )}
+              style={{ animationDelay: "350ms" }}
+            >
+              Sign in
+            </Link>
+          ) : (
+            <ProfileMenu
+              variant="inline"
+              className="animate-blur-fade-up"
+              buttonClassName={cn(
+                scrolled
+                  ? "bg-white shadow-lg hover:bg-gray-200"
+                  : "liquid-glass hover:opacity-90"
+              )}
+            />
+          )}
           <Link
             href="/audit"
             className={cn(
@@ -184,14 +210,16 @@ export function Navbar() {
               Run Audit
               <ArrowRight size={15} />
             </Link>
-            <Link
-              href="/auth/login"
-              onClick={() => setMenuOpen(false)}
-              className="liquid-glass flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium"
-            >
-              <User size={16} />
-              Sign in
-            </Link>
+            {!signedIn && (
+              <Link
+                href="/auth/login"
+                onClick={() => setMenuOpen(false)}
+                className="liquid-glass flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium"
+              >
+                <User size={16} />
+                Sign in
+              </Link>
+            )}
           </div>
         </div>
       </div>
