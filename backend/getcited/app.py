@@ -1,5 +1,6 @@
 import os
 from datetime import timedelta
+from pathlib import Path
 
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
@@ -27,6 +28,25 @@ from auth import (
     logout_user,
 )
 from sitemap_crawler import crawl_site
+
+
+def _load_dotenv() -> None:
+    """Load KEY=VALUE pairs from .env into os.environ (does not override)."""
+    env_path = Path(__file__).resolve().parent / ".env"
+    if not env_path.is_file():
+        return
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_dotenv()
 
 app = Flask(__name__)
 secret = os.environ.get("GETCITED_SECRET_KEY")
@@ -151,8 +171,10 @@ def ads_analyze():
     try:
         result = analyze_ad_hotspots(url)
     except ValueError as exc:
+        app.logger.warning("ads/analyze rejected %s: %s", url, exc)
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:  # noqa: BLE001
+        app.logger.exception("ads/analyze failed for %s", url)
         return jsonify({"error": f"Analysis failed: {exc}"}), 500
     return jsonify(result)
 

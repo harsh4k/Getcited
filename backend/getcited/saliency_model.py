@@ -238,7 +238,7 @@ def recommend_slots(
             for x in range(16, width - slot_width - 15, step_x):
                 area = slot_width * slot_height
                 safe_ratio = _area_sum(safe_integral, x, y, slot_width, slot_height) / area
-                if safe_ratio < 0.995:
+                if safe_ratio < 0.92:
                     continue
 
                 inside_attention = _area_sum(
@@ -257,7 +257,7 @@ def recommend_slots(
                     complexity_integral, x, y, slot_width, slot_height
                 ) / area
                 whitespace = float(np.clip(1.0 - complexity * 3.0, 0.0, 1.0))
-                if whitespace < 0.58:
+                if whitespace < 0.42:
                     continue
 
                 viewability, depth_label = _viewability_prior(y, slot_height)
@@ -265,7 +265,7 @@ def recommend_slots(
                 # attention peak. A small inside term handles naturally empty
                 # but visually central regions.
                 attention_context = 0.78 * nearby_attention + 0.22 * inside_attention
-                if attention_context < 0.015:
+                if attention_context < 0.008:
                     continue
                 score = (
                     (0.10 + 2.5 * attention_context)
@@ -351,12 +351,18 @@ def render_heatmap(
     )
 
     draw = ImageDraw.Draw(result, "RGBA")
-    try:
-        font = ImageFont.truetype(
-            "/System/Library/Fonts/Supplemental/Arial Bold.ttf", 18
-        )
-    except OSError:
-        font = ImageFont.load_default()
+    font = ImageFont.load_default()
+    for candidate in (
+        "C:/Windows/Fonts/arialbd.ttf",
+        "C:/Windows/Fonts/segoeuib.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ):
+        try:
+            font = ImageFont.truetype(candidate, 18)
+            break
+        except OSError:
+            continue
 
     for item in recommendations:
         box = (

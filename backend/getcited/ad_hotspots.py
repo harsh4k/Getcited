@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import io
 import re
+import threading
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -19,8 +20,11 @@ from saliency_model import (
 
 VIEWPORT = {"width": 1440, "height": 900}
 MAX_HOTSPOTS = 8
-NAV_TIMEOUT_MS = 60_000
-SETTLE_TIMEOUT_MS = 20_000
+NAV_TIMEOUT_MS = 45_000
+SETTLE_TIMEOUT_MS = 12_000
+
+# Playwright sync API is not safe across threads; serialize captures.
+_ANALYZE_LOCK = threading.Lock()
 
 # Common IAB-ish ad slot sizes we try to fit (w, h, label)
 AD_SLOTS = (
@@ -138,8 +142,15 @@ LAYOUT_SCRIPT = """
     });
   };
 
-  document.querySelectorAll("header, nav, footer, form, button, input, textarea, select, video, iframe, img, h1, h2, h3, p, li, a, [role='button'], [role='navigation'], [role='banner']")
+  document.querySelectorAll("header, nav, footer, form, button, input, textarea, select, video, iframe, [role='button'], [role='navigation'], [role='banner'], [role='contentinfo']")
     .forEach(addBlocked);
+
+  // Protect primary headings without blanketing every paragraph/link.
+  document.querySelectorAll("h1, h2").forEach(addBlocked);
+  document.querySelectorAll("img, picture").forEach((el) => {
+    const r = el.getBoundingClientRect();
+    if (r.width >= 120 && r.height >= 80) addBlocked(el);
+  });
 
   // Major layout blocks for gap detection
   const blocks = [];
@@ -394,22 +405,20 @@ def _draw_hotspots(image: Image.Image, hotspots: list[Hotspot]) -> Image.Image:
 
 
 def _wait_for_page_ready(page) -> None:
-    """Scroll the full page and wait until layout/assets have actually painted."""
+    """Scroll enough for layout/lazy content without multi-minute hangs."""
     try:
         page.wait_for_load_state("networkidle", timeout=SETTLE_TIMEOUT_MS)
     except PlaywrightTimeout:
         try:
-            page.wait_for_load_state("load", timeout=10_000)
+            page.wait_for_load_state("load", timeout=8_000)
         except PlaywrightTimeout:
             pass
 
-    # Fonts
     try:
         page.evaluate("async () => { if (document.fonts) await document.fonts.ready; }")
     except Exception:  # noqa: BLE001
         pass
 
-    # Eager-load lazy images / decode
     page.evaluate(
         """
         () => {
@@ -425,8 +434,7 @@ def _wait_for_page_ready(page) -> None:
         """
     )
 
-    # Progressive scroll to trigger IntersectionObserver / lazy sections.
-    # Re-measure height each step because SPAs grow as sections mount.
+    # One progressive scroll pass — enough for most lazy sections, capped hard.
     page.evaluate(
         """
         async () => {
@@ -439,27 +447,24 @@ def _wait_for_page_ready(page) -> None:
             );
 
           let height = getHeight();
-          const step = Math.max(280, Math.floor(window.innerHeight * 0.55));
+          const step = Math.max(400, Math.floor(window.innerHeight * 0.75));
           let guard = 0;
-          for (let y = 0; y < height + step && guard < 80; y += step, guard++) {
+          for (let y = 0; y < height + step && guard < 28; y += step, guard++) {
             window.scrollTo({ top: y, left: 0, behavior: 'instant' });
-            await sleep(420);
+            await sleep(120);
             height = getHeight();
           }
-          window.scrollTo({ top: height, left: 0, behavior: 'instant' });
-          await sleep(700);
           window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-          await sleep(500);
+          await sleep(200);
         }
         """
     )
 
-    # Wait for images (cap wait so broken assets don't hang forever)
     page.evaluate(
         """
         async () => {
           const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-          const imgs = Array.from(document.images || []);
+          const imgs = Array.from(document.images || []).slice(0, 80);
           await Promise.race([
             Promise.all(
               imgs.map((img) => {
@@ -472,13 +477,12 @@ def _wait_for_page_ready(page) -> None:
                 });
               })
             ),
-            sleep(10000),
+            sleep(4000),
           ]);
         }
         """
     )
 
-    # Force common scroll-reveal / motion states so content isn't left blank
     page.evaluate(
         """
         () => {
@@ -503,8 +507,6 @@ def _wait_for_page_ready(page) -> None:
             '.fadeIn',
             '[data-animate]',
             '[data-framer-component-type]',
-            '[class*="animate"]',
-            '[class*="motion"]',
           ];
           document.querySelectorAll(revealSelectors.join(',')).forEach((el) => {
             el.classList.add('aos-animate', 'is-visible', 'in-view', 'visible');
@@ -513,109 +515,58 @@ def _wait_for_page_ready(page) -> None:
             el.style.transform = 'none';
             el.style.filter = 'none';
           });
-
-          document.querySelectorAll('body *').forEach((el) => {
-            const cs = window.getComputedStyle(el);
-            if (cs.display === 'none' || cs.visibility === 'hidden') return;
-            if (parseFloat(cs.opacity) > 0.05) return;
-            const r = el.getBoundingClientRect();
-            if (r.width < 40 || r.height < 40) return;
-            // Skip likely overlays/modals off-screen
-            if (r.bottom < 0 || r.top > window.innerHeight * 4) return;
-            el.style.opacity = '1';
-            el.style.transform = 'none';
-            el.style.visibility = 'visible';
-          });
         }
         """
     )
 
-    page.wait_for_timeout(600)
-
-    # Final scroll pass + wait until scroll height stops growing
-    page.evaluate(
-        """
-        async () => {
-          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-          const getHeight = () =>
-            Math.max(
-              document.body ? document.body.scrollHeight : 0,
-              document.documentElement.scrollHeight
-            );
-          let last = -1;
-          let stable = 0;
-          for (let i = 0; i < 20 && stable < 3; i++) {
-            const height = getHeight();
-            const step = Math.max(280, Math.floor(window.innerHeight * 0.7));
-            for (let y = 0; y < height; y += step) {
-              window.scrollTo({ top: y, left: 0, behavior: 'instant' });
-              await sleep(180);
-            }
-            window.scrollTo({ top: getHeight(), left: 0, behavior: 'instant' });
-            await sleep(350);
-            const next = getHeight();
-            if (next === last) stable += 1;
-            else {
-              stable = 0;
-              last = next;
-            }
-          }
-          window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-          await sleep(500);
-        }
-        """
-    )
-
-    try:
-        page.wait_for_load_state("networkidle", timeout=8_000)
-    except PlaywrightTimeout:
-        pass
-    page.wait_for_timeout(400)
+    page.wait_for_timeout(250)
 
 
 def analyze_ad_hotspots(raw_url: str) -> dict:
     url = normalize_page_url(raw_url)
     final_url = url
 
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=["--disable-blink-features=AutomationControlled"],
-            )
-            context = browser.new_context(
-                viewport=VIEWPORT,
-                device_scale_factor=1,
-                user_agent=(
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/131.0.0.0 Safari/537.36"
-                ),
-                locale="en-US",
-                java_script_enabled=True,
-            )
-            page = context.new_page()
-            page.add_init_script(
-                "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
-            )
-            try:
-                page.goto(url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
-                _wait_for_page_ready(page)
-                final_url = page.url
-                layout = page.evaluate(LAYOUT_SCRIPT)
-                screenshot_bytes = page.screenshot(full_page=True, type="png", animations="disabled")
-            except PlaywrightTimeout as exc:
-                raise ValueError(f"Timed out loading page: {exc}") from exc
-            finally:
-                context.close()
-                browser.close()
-    except ValueError:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        raise ValueError(f"Could not capture page: {exc}") from exc
+    with _ANALYZE_LOCK:
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=["--disable-blink-features=AutomationControlled"],
+                )
+                context = browser.new_context(
+                    viewport=VIEWPORT,
+                    device_scale_factor=1,
+                    user_agent=(
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/131.0.0.0 Safari/537.36"
+                    ),
+                    locale="en-US",
+                    java_script_enabled=True,
+                )
+                page = context.new_page()
+                page.add_init_script(
+                    "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
+                )
+                try:
+                    page.goto(url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+                    _wait_for_page_ready(page)
+                    final_url = page.url
+                    layout = page.evaluate(LAYOUT_SCRIPT)
+                    screenshot_bytes = page.screenshot(full_page=True, type="png", animations="disabled")
+                except PlaywrightTimeout as exc:
+                    raise ValueError(f"Timed out loading page: {exc}") from exc
+                finally:
+                    context.close()
+                    browser.close()
+        except ValueError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(f"Could not capture page: {exc}") from exc
 
     image = Image.open(io.BytesIO(screenshot_bytes))
     blocked = layout.get("blocked") or []
+    scale = 1.0
     if image.width != layout["pageWidth"] and layout["pageWidth"] > 0:
         scale = image.width / float(layout["pageWidth"])
         blocked = [
@@ -628,13 +579,75 @@ def analyze_ad_hotspots(raw_url: str) -> dict:
             }
             for region in blocked
         ]
+        # Keep layout dimensions in screenshot space for gap fallback.
+        layout = {
+            **layout,
+            "pageWidth": image.width,
+            "pageHeight": image.height,
+            "headerBottom": int(layout.get("headerBottom", 80) * scale),
+            "footerTop": int(layout.get("footerTop", image.height) * scale),
+            "blocks": [
+                {
+                    **b,
+                    "x": int(b["x"] * scale),
+                    "y": int(b["y"] * scale),
+                    "w": int(b["w"] * scale),
+                    "h": int(b["h"] * scale),
+                }
+                for b in (layout.get("blocks") or [])
+            ],
+            "asides": [
+                {
+                    **a,
+                    "x": int(a["x"] * scale),
+                    "y": int(a["y"] * scale),
+                    "w": int(a["w"] * scale),
+                    "h": int(a["h"] * scale),
+                }
+                for a in (layout.get("asides") or [])
+            ],
+            "blocked": blocked,
+        }
 
     saliency = predict_saliency(image)
     safe_mask = build_safe_mask(image.size, blocked)
     recommendations = recommend_slots(saliency, safe_mask, image)
+
+    # Dense pages often paint the protected-DOM mask over everything. Fall back
+    # to layout gap heuristics so the UI still gets actionable placements.
+    warning_extra = None
+    soft_error = None
+    if not recommendations:
+        layout_hotspots = find_hotspots(layout)
+        recommendations = [hot.as_dict() for hot in layout_hotspots]
+        if recommendations:
+            warning_extra = (
+                "Used layout-gap fallback because saliency filters found no clear whitespace slots."
+            )
+        else:
+            soft_error = "Heatmap generated, but no safe standard-size ad slot was found."
+
     annotated = render_heatmap(image, saliency, recommendations)
+
+    # Keep the full page. Downscale width if needed so payloads stay usable;
+    # never crop height — ad slots further down the page must remain visible.
+    max_w = 1200
+    if annotated.width > max_w:
+        ratio = max_w / float(annotated.width)
+        annotated = annotated.resize(
+            (max_w, max(1, int(annotated.height * ratio))),
+            Image.Resampling.LANCZOS,
+        )
+        for item in recommendations:
+            item["x"] = int(item["x"] * ratio)
+            item["y"] = int(item["y"] * ratio)
+            item["width"] = max(1, int(item["width"] * ratio))
+            item["height"] = max(1, int(item["height"] * ratio))
+
+    # Taller pages get slightly stronger JPEG compression to avoid huge data URIs.
+    quality = 82 if annotated.height <= 3000 else (72 if annotated.height <= 6000 else 62)
     buf = io.BytesIO()
-    annotated.save(buf, format="PNG", optimize=True)
+    annotated.save(buf, format="JPEG", quality=quality, optimize=True)
     encoded = base64.b64encode(buf.getvalue()).decode("ascii")
 
     warning = None
@@ -643,6 +656,8 @@ def analyze_ad_hotspots(raw_url: str) -> dict:
             "Page height looks like a single viewport — this host may be serving a "
             "minimal/bot version of the site. Try the exact live URL that shows full content in your browser."
         )
+    if warning_extra:
+        warning = f"{warning} {warning_extra}".strip() if warning else warning_extra
 
     return {
         "url": url,
@@ -654,9 +669,5 @@ def analyze_ad_hotspots(raw_url: str) -> dict:
         "hotspots": recommendations,
         "image_base64": encoded,
         "warning": warning,
-        "error": (
-            None
-            if recommendations
-            else "Heatmap generated, but no safe standard-size ad slot was found."
-        ),
+        "error": soft_error,
     }

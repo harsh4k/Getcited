@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import { chat } from "@/lib/openrouter";
 import { rateLimit } from "@/lib/rate-limit";
 
+/** Space OpenRouter calls — free tier is ~20 RPM; 4 steps × N pages bursts past it. */
+const STEP_GAP_MS = 3_500;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function POST(req: Request) {
   const rl = rateLimit("ai-geo-pipeline", { limit: 5, windowMs: 120_000 });
   if (!rl.ok) {
@@ -18,12 +25,19 @@ export async function POST(req: Request) {
     }
 
     const results = [];
+    let callIndex = 0;
+
+    async function pacedChat(options: Parameters<typeof chat>[0]) {
+      if (callIndex > 0) await sleep(STEP_GAP_MS);
+      callIndex += 1;
+      return chat(options);
+    }
 
     for (const page of pages) {
       if (!page.content || page.content.trim().length < 50) continue;
 
       // Step 1: Understand the page
-      const step1 = await chat({
+      const step1 = await pacedChat({
         messages: [
           {
             role: "system",
@@ -49,7 +63,7 @@ export async function POST(req: Request) {
       const step1Json = extractJson(step1);
 
       // Step 2: Probable questions for citation
-      const step2 = await chat({
+      const step2 = await pacedChat({
         messages: [
           {
             role: "system",
@@ -78,7 +92,7 @@ Return 6-10 questions ranked by citation potential.`,
       const step2Json = extractJson(step2);
 
       // Step 3: AI search queries
-      const step3 = await chat({
+      const step3 = await pacedChat({
         messages: [
           {
             role: "system",
@@ -108,7 +122,7 @@ Return 8-12 queries across platforms.`,
       const step3Json = extractJson(step3);
 
       // Step 4: GEO-optimized writeup — the main deliverable
-      const step4 = await chat({
+      const step4 = await pacedChat({
         messages: [
           {
             role: "system",

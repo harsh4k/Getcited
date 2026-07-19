@@ -104,7 +104,7 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       onSubmit,
       placeholder = "Ask anything",
       className,
-      models = ["GEO Optimizer", "Crawl", "Ads", "AB Test"],
+      models = ["Analysis", "AB Test"],
       defaultValue = "",
       value: controlledValue,
       onChange,

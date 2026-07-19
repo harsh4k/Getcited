@@ -1,13 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import { BarChart3, Globe, Quote, Sparkles, Zap } from "lucide-react";
+import { Quote, Search, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const SUGGESTIONS = [
-  { prompt: "Analyze my site for AI search visibility", tool: "GEO Optimizer", subtitle: "AI Search Audit" },
-  { prompt: "Crawl my site and list all pages", tool: "Crawl", subtitle: "Site Crawler" },
-  { prompt: "Find my landing page ad hotspots", tool: "Ads", subtitle: "Attention Heatmap" },
+  { prompt: "Analyze my site for AI search & ads", tool: "Analysis", subtitle: "Full site analysis" },
   { prompt: "Set up an A/B test on my homepage", tool: "AB Test", subtitle: "Experiments" },
 ];
 
@@ -26,13 +24,14 @@ const STEPS = [
   },
   {
     n: "02",
-    title: "AI analysis",
-    body: "We surface the questions people ask ChatGPT, Gemini, and Perplexity where you should be the cited answer.",
+    title: "Pick a page",
+    body: "Scroll your crawled pages, then run AEO writeups or ad placement on the ones that matter.",
     visual: (
       <div className="flex h-full flex-col justify-center gap-2 px-6">
-        {[82, 64, 45].map((w) => (
-          <div key={w} className="h-2 rounded-full bg-white/10">
-            <div className="h-full rounded-full bg-accent/70" style={{ width: `${w}%` }} />
+        {["/pricing", "/blog/geo-guide", "/features"].map((path) => (
+          <div key={path} className="flex items-center justify-between rounded-lg bg-white/10 px-3 py-2">
+            <span className="font-mono text-[10px] text-white/70">{path}</span>
+            <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[9px] text-accent">AEO · Ads</span>
           </div>
         ))}
       </div>
@@ -41,7 +40,7 @@ const STEPS = [
   {
     n: "03",
     title: "Citation-ready output",
-    body: "Rewritten, quotable content with the entities and structure AI engines love — ranked by impact.",
+    body: "Rewritten, quotable content and attention heatmaps — ranked by impact for AI search and ads.",
     visual: (
       <div className="flex h-full items-center justify-center">
         <Quote size={40} className="text-accent/80" fill="currentColor" strokeWidth={0} />
@@ -113,7 +112,6 @@ interface EmptyStateSectionsProps {
 export function EmptyStateSections({ onPick }: EmptyStateSectionsProps) {
   return (
     <div className="mx-auto w-full max-w-6xl px-6 pb-24">
-      {/* Suggestion pills */}
       <div className="flex flex-wrap items-center justify-center gap-2">
         {SUGGESTIONS.map((s) => (
           <button
@@ -127,7 +125,6 @@ export function EmptyStateSections({ onPick }: EmptyStateSectionsProps) {
         ))}
       </div>
 
-      {/* How it works — numbered media cards */}
       <div className="scroll-reveal mt-28 text-center">
         <h2 className="text-2xl font-bold tracking-tight text-white sm:text-4xl">How Getcited works</h2>
         <p className="mx-auto mt-3 max-w-lg text-sm text-white/75">From URL to AI-citable content in three steps.</p>
@@ -147,20 +144,18 @@ export function EmptyStateSections({ onPick }: EmptyStateSectionsProps) {
         ))}
       </div>
 
-      {/* Bento — four tools, one goal */}
       <div className="scroll-reveal mt-28 text-center">
         <h2 className="text-2xl font-bold tracking-tight text-white sm:text-4xl">
-          Four tools, one goal — <span className="text-accent">get cited</span>
+          Analyze first — <span className="text-accent">then act</span>
         </h2>
       </div>
       <div className="mt-10 grid auto-rows-[160px] grid-cols-2 gap-4 lg:grid-cols-4">
-        {/* GEO report — large */}
-        <Tile className="col-span-2 row-span-2 p-6" onClick={() => onPick("GEO Optimizer")}>
+        <Tile className="col-span-2 row-span-2 p-6" onClick={() => onPick("Analysis")}>
           <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
-            <Sparkles size={16} className="text-accent" /> GEO Optimizer
+            <Search size={16} className="text-accent" /> Analysis
           </div>
           <p className="mt-2 max-w-sm text-xs leading-5 text-text-secondary">
-            The full pipeline: crawl, analyze, and rewrite your pages to maximize AI citation potential.
+            Crawl your site, then run AEO writeups or ad placement heatmaps on any page.
           </p>
           <div className="mt-5 flex items-center gap-5">
             <ScoreRing score={87} />
@@ -176,10 +171,11 @@ export function EmptyStateSections({ onPick }: EmptyStateSectionsProps) {
               </p>
             </div>
           </div>
-          <span className="mt-4 inline-block text-[11px] text-accent opacity-0 transition-opacity group-hover:opacity-100">Run it →</span>
+          <span className="mt-4 inline-block text-[11px] text-accent opacity-0 transition-opacity group-hover:opacity-100">
+            Run it →
+          </span>
         </Tile>
 
-        {/* Image tile — distinct from the site-wide moon-walk video backdrop */}
         <Tile className="col-span-2 row-span-2 p-0 lg:col-span-1">
           <Image
             src="https://images.unsplash.com/photo-1677442136019-21780ecad995?w=640&h=800&fit=crop&q=80"
@@ -194,73 +190,50 @@ export function EmptyStateSections({ onPick }: EmptyStateSectionsProps) {
           </div>
         </Tile>
 
-        {/* Heatmap tile */}
-        <Tile className="row-span-2" onClick={() => onPick("Ads")}>
-          <div className="flex items-center gap-2 text-xs font-semibold text-text-primary">
-            <BarChart3 size={14} className="text-accent" /> Ads
-          </div>
-          <p className="mt-1.5 text-[11px] leading-4 text-text-secondary">Predict where attention lands on any page.</p>
-          <div className="relative mt-3 h-[calc(100%-4.5rem)] overflow-hidden rounded-lg border border-white/10 bg-white/5">
-            <div className="absolute left-2 right-2 top-2 h-2 rounded bg-white/10" />
-            <div className="absolute left-2 top-6 h-2 w-1/2 rounded bg-white/10" />
-            <div className="absolute left-2 right-8 top-12 h-8 rounded bg-white/5" />
-            <div className="absolute h-20 w-20 rounded-full bg-red-500/50 blur-xl" style={{ top: "8%", left: "12%" }} />
-            <div className="absolute h-14 w-14 rounded-full bg-amber-400/40 blur-xl" style={{ top: "42%", right: "10%" }} />
-            <div className="absolute h-10 w-10 rounded-full bg-emerald-400/30 blur-lg" style={{ bottom: "8%", left: "30%" }} />
-          </div>
-        </Tile>
-
-        {/* Crawl tile */}
-        <Tile onClick={() => onPick("Crawl")}>
-          <div className="flex items-center gap-2 text-xs font-semibold text-text-primary">
-            <Globe size={14} className="text-accent" /> Crawl
-          </div>
-          <svg viewBox="0 0 200 70" className="mt-2 h-[calc(100%-2rem)] w-full" aria-hidden>
-            <g stroke="rgba(129,140,248,0.45)" strokeWidth="1">
-              <line x1="100" y1="14" x2="40" y2="52" /><line x1="100" y1="14" x2="100" y2="52" />
-              <line x1="100" y1="14" x2="160" y2="52" /><line x1="40" y1="52" x2="16" y2="64" />
-            </g>
-            <circle cx="100" cy="14" r="7" fill="var(--accent)" />
-            {[[40, 52], [100, 52], [160, 52], [16, 64]].map(([x, y]) => (
-              <circle key={`${x}-${y}`} cx={x} cy={y} r="4.5" fill="rgba(255,255,255,0.35)" />
-            ))}
-          </svg>
-        </Tile>
-
-        {/* A/B tile */}
-        <Tile onClick={() => onPick("AB Test")}>
+        <Tile className="row-span-2" onClick={() => onPick("AB Test")}>
           <div className="flex items-center gap-2 text-xs font-semibold text-text-primary">
             <Zap size={14} className="text-accent" /> A/B Test
           </div>
+          <p className="mt-1.5 text-[11px] leading-4 text-text-secondary">
+            Measure which copy and layouts win on your live site.
+          </p>
           <div className="mt-3 space-y-2">
             <div className="flex items-center gap-2 text-[10px] text-white/75">
               A
-              <div className="h-3 flex-1 rounded-full bg-white/10"><div className="h-full w-[46%] rounded-full bg-white/30" /></div>
+              <div className="h-3 flex-1 rounded-full bg-white/10">
+                <div className="h-full w-[46%] rounded-full bg-white/30" />
+              </div>
               46%
             </div>
             <div className="flex items-center gap-2 text-[10px] text-accent">
               B
-              <div className="h-3 flex-1 rounded-full bg-white/10"><div className="h-full w-[54%] rounded-full bg-accent" /></div>
+              <div className="h-3 flex-1 rounded-full bg-white/10">
+                <div className="h-full w-[54%] rounded-full bg-accent" />
+              </div>
               54%
             </div>
           </div>
         </Tile>
 
-        {/* Stat tiles */}
         <Tile>
           <p className="font-mono text-3xl text-text-primary">1,400+</p>
-          <p className="mt-2 text-[11px] leading-4 text-text-secondary">prompts tracked across ChatGPT, Gemini &amp; Perplexity — daily.</p>
+          <p className="mt-2 text-[11px] leading-4 text-text-secondary">
+            prompts tracked across ChatGPT, Gemini &amp; Perplexity — daily.
+          </p>
         </Tile>
         <Tile>
           <p className="font-mono text-3xl text-text-primary">3 min</p>
-          <p className="mt-2 text-[11px] leading-4 text-text-secondary">from pasting a URL to your first citation report.</p>
+          <p className="mt-2 text-[11px] leading-4 text-text-secondary">
+            from pasting a URL to your first citation report.
+          </p>
         </Tile>
       </div>
 
-      {/* Numbers, not testimonials — we're new, so we show what we measure */}
       <div className="scroll-reveal mt-28 text-center">
         <h2 className="text-2xl font-bold tracking-tight text-white sm:text-4xl">No testimonials. Just numbers.</h2>
-        <p className="mx-auto mt-3 max-w-lg text-sm text-white/75">Getcited is new — so instead of borrowed praise, here&apos;s what the product measures.</p>
+        <p className="mx-auto mt-3 max-w-lg text-sm text-white/75">
+          Getcited is new — so instead of borrowed praise, here&apos;s what the product measures.
+        </p>
       </div>
       <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {STATS.map((s) => (

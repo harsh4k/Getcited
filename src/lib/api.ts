@@ -65,9 +65,17 @@ async function request<T = Record<string, unknown>>(
     headers: { "Content-Type": "application/json" },
     ...options,
   });
-  const data = await res.json().catch(() => null);
-  if (!res.ok || !data || data.error) {
-    throw new Error(data?.error || `Request failed (${res.status})`);
+  const data = (await res.json().catch(() => null)) as
+    | (Record<string, unknown> & { error?: string | null })
+    | null;
+  // Only treat HTTP failures as hard errors. Several backend payloads include a
+  // soft `error` field on 200 responses (e.g. ads heatmap with zero slots).
+  if (!res.ok || data == null) {
+    const message =
+      data && typeof data.error === "string" && data.error.trim()
+        ? data.error
+        : `Request failed (${res.status})`;
+    throw new Error(message);
   }
   return data as T;
 }
@@ -104,6 +112,7 @@ export const api = {
       hotspots: { x: number; y: number; width: number; height: number; score: number; label: string; reason: string }[];
       image_base64: string;
       warning: string | null;
+      /** Soft message when heatmap exists but no slot passed filters — not an HTTP failure. */
       error: string | null;
     }>("/ads/analyze", {
       method: "POST",
