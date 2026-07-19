@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { PromptInput } from "@/components/ui/ai-chat-input";
 import { ProfileMenu } from "@/components/audit/ProfileMenu";
 import { EmptyStateSections } from "@/components/audit/EmptyStateSections";
@@ -19,21 +20,12 @@ import {
   ChevronUp,
   Copy,
   Globe,
-  LayoutDashboard,
   Search,
   Sparkles,
   Zap,
   AlertCircle,
   CheckCircle2,
 } from "lucide-react";
-
-const TOOLS = ["Analysis", "AB Test"] as const;
-type Tool = (typeof TOOLS)[number];
-
-/** Older history entries used separate tool names — map them onto Analysis. */
-function resolveTool(tool: string): Tool {
-  return tool === "AB Test" ? "AB Test" : "Analysis";
-}
 
 interface PageData {
   url: string;
@@ -62,12 +54,6 @@ interface AdsResult {
   error?: string | null;
 }
 
-interface AbResult {
-  site?: { id: number; name: string; url: string };
-  experiments: { id: number; name: string; status: string; traffic_pct: number }[];
-  overview?: { totals: { events: number; users: number; sessions: number } };
-}
-
 function normalizeUrl(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
@@ -83,6 +69,7 @@ function scoreTone(score: number): string {
 }
 
 export default function AuditPage() {
+  const router = useRouter();
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -92,12 +79,10 @@ export default function AuditPage() {
   const [crawlPages, setCrawlPages] = useState<PageData[]>([]);
   const [geoResults, setGeoResults] = useState<GeoPipelineResult[]>([]);
   const [adsResult, setAdsResult] = useState<AdsResult | null>(null);
-  const [abResult, setAbResult] = useState<AbResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   const [expandedResult, setExpandedResult] = useState<number | null>(0);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
-  const [selectedTool, setSelectedTool] = useState<Tool>("Analysis");
   const [historyClock, setHistoryClock] = useState(0);
   const [pageActionLoading, setPageActionLoading] = useState<string | null>(null);
   const [selectedPageUrl, setSelectedPageUrl] = useState<string | null>(null);
@@ -108,7 +93,7 @@ export default function AuditPage() {
 
   useEffect(() => {
     const hydrate = window.setTimeout(() => {
-      setHistory(getHistory());
+      setHistory(getHistory().filter((h) => h.tool !== "AB Test"));
       setHistoryClock(Date.now());
     }, 0);
     const timer = window.setInterval(() => setHistoryClock(Date.now()), 60000);
@@ -118,9 +103,9 @@ export default function AuditPage() {
     };
   }, []);
 
-  const hasResults = loading || error || crawlPages.length > 0 || geoResults.length > 0 || adsResult || abResult;
+  const hasResults = loading || error || crawlPages.length > 0 || geoResults.length > 0 || adsResult;
 
-  const runTool = useCallback(async (rawUrl: string, tool: Tool) => {
+  const runTool = useCallback(async (rawUrl: string) => {
     let url: string;
     try {
       url = normalizeUrl(rawUrl);
@@ -135,7 +120,6 @@ export default function AuditPage() {
     setCrawlPages([]);
     setGeoResults([]);
     setAdsResult(null);
-    setAbResult(null);
     setSelectedPageUrl(null);
     setPagePanel(null);
     setAeoCache({});
@@ -145,34 +129,20 @@ export default function AuditPage() {
     const entry: HistoryEntry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       url,
-      tool,
+      tool: "Analysis",
       timestamp: Date.now(),
     };
 
     try {
-      if (tool === "Analysis") {
-        const data = await api.crawl(url);
-        if (data.error) throw new Error(data.error);
-        const valid = data.pages.filter((p) => p.ok && p.content.trim().length > 50);
-        setCrawlPages(valid);
-        setProgress({ done: valid.length, total: data.pages.length });
-        entry.result = { pageCount: valid.length };
-      } else {
-        const sites = await api.listSites();
-        const existing = sites.sites.find((s) => s.url === url);
-        if (existing) {
-          const data = await api.getSite(existing.id);
-          setAbResult(data);
-          entry.result = { experimentCount: data.experiments.length };
-        } else {
-          const site = await api.createSite(new URL(url).hostname, url);
-          setAbResult({ site, experiments: [] });
-          entry.result = { experimentCount: 0 };
-        }
-      }
+      const data = await api.crawl(url);
+      if (data.error) throw new Error(data.error);
+      const valid = data.pages.filter((p) => p.ok && p.content.trim().length > 50);
+      setCrawlPages(valid);
+      setProgress({ done: valid.length, total: data.pages.length });
+      entry.result = { pageCount: valid.length };
 
       saveHistory(entry);
-      setHistory(getHistory());
+      setHistory(getHistory().filter((h) => h.tool !== "AB Test"));
       setHistoryClock(Date.now());
       setActiveResult(entry);
     } catch (err) {
@@ -182,12 +152,15 @@ export default function AuditPage() {
     }
   }, []);
 
-  const handleSubmit = (value: string, meta: { model: string }) => {
-    runTool(value, resolveTool(meta.model));
+  const handleSubmit = (value: string) => {
+    void runTool(value);
   };
 
   const handleSuggestionPick = (tool: string) => {
-    setSelectedTool(resolveTool(tool));
+    if (tool === "AB Test") {
+      router.push("/ab");
+      return;
+    }
     inputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     setTimeout(() => inputRef.current?.querySelector("textarea")?.focus(), 400);
   };
@@ -200,18 +173,11 @@ export default function AuditPage() {
     return `${Math.floor(diff / 86400000)}d ago`;
   };
 
-  const toolIcon = (tool: string, size = 14) => {
-    const className = "text-accent";
-    if (resolveTool(tool) === "Analysis") return <Search size={size} className={className} />;
-    return <Zap size={size} className={className} />;
-  };
-
   const clearReport = () => {
     setActiveResult(null);
     setCrawlPages([]);
     setGeoResults([]);
     setAdsResult(null);
-    setAbResult(null);
     setError(null);
     setPageActionLoading(null);
     setSelectedPageUrl(null);
@@ -254,7 +220,7 @@ export default function AuditPage() {
         result: { pageCount: 1, optimizedPages: pipeline.data.length },
       };
       saveHistory(entry);
-      setHistory(getHistory());
+      setHistory(getHistory().filter((h) => h.tool !== "AB Test"));
       setHistoryClock(Date.now());
       setActiveResult(entry);
     } catch (err) {
@@ -288,7 +254,7 @@ export default function AuditPage() {
         result: { hotspotCount: data.hotspot_count },
       };
       saveHistory(entry);
-      setHistory(getHistory());
+      setHistory(getHistory().filter((h) => h.tool !== "AB Test"));
       setHistoryClock(Date.now());
       setActiveResult(entry);
     } catch (err) {
@@ -297,6 +263,36 @@ export default function AuditPage() {
       setPageActionLoading(null);
     }
   };
+
+  const toolsNav = (closeMobile?: boolean) => (
+    <nav className="px-3 pt-2 space-y-0.5">
+      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-text-tertiary">Tools</div>
+      <button
+        type="button"
+        onClick={() => {
+          if (closeMobile) setMobileMenuOpen(false);
+          if (!hasResults) setTimeout(() => inputRef.current?.querySelector("textarea")?.focus(), 50);
+        }}
+        className={cn(
+          "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs transition-colors",
+          !hasResults ? "bg-white text-black" : "text-text-secondary hover:bg-white/10 hover:text-text-primary"
+        )}
+      >
+        <Search size={14} className="text-accent" />
+        Analysis
+      </button>
+      <Link
+        href="/ab"
+        onClick={() => {
+          if (closeMobile) setMobileMenuOpen(false);
+        }}
+        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-white/10 hover:text-text-primary"
+      >
+        <Zap size={14} className="text-accent" />
+        A/B Test
+      </Link>
+    </nav>
+  );
 
   return (
     <div className="relative z-10 h-dvh overflow-hidden text-text-primary">
@@ -337,27 +333,7 @@ export default function AuditPage() {
           </button>
         </div>
 
-        <nav className="px-3 pt-2 space-y-0.5">
-          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-text-tertiary">Tools</div>
-          {TOOLS.map((tool) => {
-            const isActive = selectedTool === tool && !hasResults;
-            return (
-              <button
-                key={tool}
-                onClick={() => {
-                  setSelectedTool(tool);
-                  if (!hasResults) setTimeout(() => inputRef.current?.querySelector("textarea")?.focus(), 50);
-                }}
-                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs transition-colors ${
-                  isActive ? "bg-white text-black" : "text-text-secondary hover:bg-white/10 hover:text-text-primary"
-                }`}
-              >
-                {toolIcon(tool)}
-                {tool === "AB Test" ? "A/B Test" : tool}
-              </button>
-            );
-          })}
-        </nav>
+        {toolsNav()}
 
         <div className="flex-1 overflow-hidden flex flex-col px-3 pt-4">
           <button
@@ -377,12 +353,12 @@ export default function AuditPage() {
               {history.slice(0, 20).map((entry) => (
                 <button
                   key={entry.id}
-                  onClick={() => runTool(entry.url, resolveTool(entry.tool))}
+                  onClick={() => void runTool(entry.url)}
                   className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
                     activeResult?.id === entry.id ? "bg-white text-black" : "text-text-secondary hover:bg-white/10 hover:text-text-primary"
                   }`}
                 >
-                  {toolIcon(entry.tool)}
+                  <Search size={14} className="text-accent" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[11px] font-mono">{entry.url.replace(/^https?:\/\//, "").slice(0, 28)}</span>
                     <span className="block text-[10px] text-text-tertiary">{timeAgo(entry.timestamp)}</span>
@@ -427,28 +403,7 @@ export default function AuditPage() {
           </button>
         </div>
 
-        <nav className="px-3 pt-2 space-y-0.5">
-          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-text-tertiary">Tools</div>
-          {TOOLS.map((tool) => {
-            const isActive = selectedTool === tool && !hasResults;
-            return (
-              <button
-                key={tool}
-                onClick={() => {
-                  setSelectedTool(tool);
-                  setMobileMenuOpen(false);
-                  if (!hasResults) setTimeout(() => inputRef.current?.querySelector("textarea")?.focus(), 50);
-                }}
-                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs transition-colors ${
-                  isActive ? "bg-white text-black" : "text-text-secondary hover:bg-white/10 hover:text-text-primary"
-                }`}
-              >
-                {toolIcon(tool)}
-                {tool === "AB Test" ? "A/B Test" : tool}
-              </button>
-            );
-          })}
-        </nav>
+        {toolsNav(true)}
 
         <div className="flex-1 overflow-hidden flex flex-col px-3 pt-4">
           <button
@@ -468,12 +423,12 @@ export default function AuditPage() {
               {history.slice(0, 20).map((entry) => (
                 <button
                   key={entry.id}
-                  onClick={() => { runTool(entry.url, resolveTool(entry.tool)); setMobileMenuOpen(false); }}
+                  onClick={() => { void runTool(entry.url); setMobileMenuOpen(false); }}
                   className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
                     activeResult?.id === entry.id ? "bg-white text-black" : "text-text-secondary hover:bg-white/10 hover:text-text-primary"
                   }`}
                 >
-                  {toolIcon(entry.tool)}
+                  <Search size={14} className="text-accent" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[11px] font-mono">{entry.url.replace(/^https?:\/\//, "").slice(0, 28)}</span>
                     <span className="block text-[10px] text-text-tertiary">{timeAgo(entry.timestamp)}</span>
@@ -519,7 +474,7 @@ export default function AuditPage() {
                 </p>
                 <div ref={inputRef} className="animate-blur-fade-up [animation-delay:360ms] mx-auto max-w-[580px]">
                   <div className="">
-                    <PromptInput onSubmit={handleSubmit} placeholder="Paste a URL to get started..." models={[...TOOLS]} selectedModel={selectedTool} onModelChange={(m) => setSelectedTool(resolveTool(m))} className="w-full" />
+                    <PromptInput onSubmit={handleSubmit} placeholder="Paste a URL to get started..." models={["Analysis"]} selectedModel="Analysis" className="w-full" />
                   </div>
                 </div>
               </div>
@@ -533,7 +488,7 @@ export default function AuditPage() {
             <div className="shrink-0 flex justify-center px-6 pt-6 pb-3 relative z-20">
               <div className="w-full max-w-[580px]" ref={inputRef}>
                 <div className="">
-                  <PromptInput onSubmit={handleSubmit} placeholder="Paste your URL..." models={[...TOOLS]} selectedModel={selectedTool} onModelChange={(m) => setSelectedTool(resolveTool(m))} className="w-full" />
+                  <PromptInput onSubmit={handleSubmit} placeholder="Paste your URL..." models={["Analysis"]} selectedModel="Analysis" className="w-full" />
                 </div>
               </div>
             </div>
@@ -563,7 +518,7 @@ export default function AuditPage() {
                   {activeResult && (
                     <div className="liquid-glass flex items-center justify-between rounded-2xl bg-bg-primary/25 px-4 py-3">
                       <div className="flex min-w-0 items-center gap-3 text-sm">
-                        {toolIcon(activeResult.tool, 16)}
+                        <Search size={16} className="text-accent" />
                         <span className="min-w-0 truncate font-mono text-text-primary">{activeResult.url}</span>
                       </div>
                       <button
@@ -960,18 +915,6 @@ export default function AuditPage() {
                           )}
                         </div>
                       </div>
-                    </div>
-                  )}
-
-                  {abResult && (
-                    <div className="liquid-glass rounded-2xl bg-bg-primary/25 p-5">
-                      <div className="flex items-center gap-2 text-sm font-semibold"><LayoutDashboard size={16} className="text-accent" /> A/B Testing</div>
-                      <div className="mt-5 grid grid-cols-3 gap-2">
-                        <Metric label="Experiments" value={String(abResult.experiments.length)} />
-                        <Metric label="Events" value={String(abResult.overview?.totals.events ?? 0)} />
-                        <Metric label="Users" value={String(abResult.overview?.totals.users ?? 0)} />
-                      </div>
-                      {abResult.experiments.length === 0 && <p className="mt-4 text-xs text-text-secondary">Site connected. Create an experiment from the backend dashboard or SDK flow to start measuring changes.</p>}
                     </div>
                   )}
                 </div>

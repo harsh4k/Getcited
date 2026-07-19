@@ -1,6 +1,6 @@
 const BACKEND = "/api";
 
-interface SiteData {
+export interface SiteData {
   id: number;
   user_id: number;
   name: string;
@@ -9,14 +9,58 @@ interface SiteData {
   created_at: string;
 }
 
-interface ExperimentData {
+export interface ExperimentVariant {
+  name: string;
+  weight: number;
+  selector?: string;
+  html?: string;
+  text?: string;
+}
+
+export interface ExperimentData {
   id: number;
   site_id: number;
   name: string;
   status: string;
   traffic_pct: number;
-  variants: { name: string; weight: number; selector?: string; html?: string; text?: string }[];
+  variants: ExperimentVariant[];
   created_at: string;
+}
+
+export interface AbOverview {
+  totals: { events: number; users: number; sessions: number };
+  by_type: { event_type: string; count: number }[];
+  recent: {
+    event_type: string;
+    path?: string | null;
+    anonymous_id?: string;
+    session_id?: string;
+    experiment_id?: string | null;
+    variant?: string | null;
+    created_at?: string;
+  }[];
+  top_paths: { path: string; count: number }[];
+}
+
+export interface AbSiteDetail {
+  site: SiteData;
+  experiments: ExperimentData[];
+  overview: AbOverview;
+}
+
+export interface ExperimentReportVariant {
+  variant: string;
+  events: number;
+  users: number;
+  pageviews: number;
+  clicks: number;
+  conversions: number;
+  conversion_rate: number;
+}
+
+export interface ExperimentReport {
+  experiment: ExperimentData;
+  variants: ExperimentReportVariant[];
 }
 
 interface PageData {
@@ -127,22 +171,12 @@ export const api = {
       body: JSON.stringify({ name, url }),
     }),
 
-  getSite: (siteId: number) =>
-    request<{
-      site: SiteData;
-      experiments: ExperimentData[];
-      overview: {
-        totals: { events: number; users: number; sessions: number };
-        by_type: { event_type: string; count: number }[];
-        recent: Record<string, unknown>[];
-        top_paths: { path: string; count: number }[];
-      };
-    }>(`/ab/sites/${siteId}`),
+  getSite: (siteId: number) => request<AbSiteDetail>(`/ab/sites/${siteId}`),
 
   createExperiment: (
     siteId: number,
     name: string,
-    variants: { name: string; weight: number; selector?: string; html?: string; text?: string }[],
+    variants: ExperimentVariant[],
     trafficPct: number
   ) =>
     request<ExperimentData>(`/ab/sites/${siteId}/experiments`, {
@@ -151,11 +185,48 @@ export const api = {
     }),
 
   setExperimentStatus: (experimentId: number, status: string) =>
-    request(`/ab/experiments/${experimentId}/status`, {
+    request<ExperimentData>(`/ab/experiments/${experimentId}/status`, {
       method: "POST",
       body: JSON.stringify({ status }),
     }),
 
   getExperimentReport: (experimentId: number) =>
-    request(`/ab/experiments/${experimentId}/report`),
+    request<ExperimentReport>(`/ab/experiments/${experimentId}/report`),
+
+  abInsights: (payload: {
+    site: { name: string; url: string };
+    overview: AbOverview;
+    experiments: ExperimentData[];
+  }) =>
+    request<{
+      success: boolean;
+      data: {
+        suggestions: {
+          title: string;
+          rationale: string;
+          action: string;
+          priority: "high" | "medium" | "low";
+        }[];
+        source: "ai" | "heuristic";
+      };
+    }>("/ai/ab-insights", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 };
+
+/** Install snippet — SDK origin is this app so /ab/collect + /ab/config rewrite correctly. */
+export function sdkSnippet(sdkKey: string, origin?: string): string {
+  const base = (origin || (typeof window !== "undefined" ? window.location.origin : "")).replace(/\/$/, "");
+  return `<script src="${base}/sdk.js" data-getcited-key="${sdkKey}" async></script>`;
+}
+
+/** Normalize URLs for site matching (ignore trailing slash / default ports). */
+export function normalizeSiteUrl(value: string): string {
+  const withProtocol = /^https?:\/\//i.test(value.trim()) ? value.trim() : `https://${value.trim()}`;
+  const u = new URL(withProtocol);
+  u.hash = "";
+  let path = u.pathname;
+  if (path.endsWith("/") && path.length > 1) path = path.slice(0, -1);
+  return `${u.protocol}//${u.host}${path}${u.search}`;
+}

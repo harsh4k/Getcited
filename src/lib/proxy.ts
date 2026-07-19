@@ -16,13 +16,19 @@ export async function proxyRequest(
 
   // Identify the Supabase user to Flask. Flask trusts this header only because
   // it binds to 127.0.0.1 and is reached exclusively through this proxy.
+  let email: string | undefined;
   try {
     const supabase = await supabaseServer();
     const { data } = await supabase.auth.getUser();
-    if (data.user?.email) headers.set("x-user-email", data.user.email);
+    email = data.user?.email ?? undefined;
   } catch {
-    // No session — Flask will answer 401 with a clean JSON error
+    // No session
   }
+  // Local/dev fallback so A/B + crawl work without signing in during hackathon demos.
+  if (!email && process.env.NODE_ENV !== "production") {
+    email = process.env.GETCITED_DEV_USER_EMAIL || "local@getcited.dev";
+  }
+  if (email) headers.set("x-user-email", email);
 
   let res: Response;
   try {
