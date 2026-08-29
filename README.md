@@ -37,24 +37,26 @@ While conventional SEO tools focus on search engine rankings, GetCited is design
 ## Technology Stack
 
 ### Frontend
-- React
+- Next.js (App Router) + React
 - TypeScript
-- Vite
 - Tailwind CSS
 
 ### Backend
-- Supabase
-- PostgreSQL
-- Edge Functions
+- Supabase (PostgreSQL, Auth, Edge Functions)
+- Python saliency/ad-hotspot service (Flask) — `backend/getcited/`:
+  - `saliency_model.py` — visual saliency scoring using CLIP + DeepGaze
+  - `sitemap_crawler.py` — crawls a site's sitemap for page discovery
+  - `ad_hotspots.py`, `ab_store.py`, `audit_store.py` — hotspot detection, A/B and audit result storage
 
 ### AI & Analysis
 - Large Language Models
+- CLIP (OpenAI) + DeepGaze for visual saliency
 - Structured Data Analysis
 - Semantic Content Processing
 
 ### Deployment
-- Vercel
-- Supabase
+- Vercel (frontend)
+- Supabase (data/auth)
 
 ---
 
@@ -76,47 +78,33 @@ GetCited is designed for:
 
 ```
 src/
+├── app/          # Next.js App Router routes
 ├── components/
-├── pages/
-├── services/
-├── hooks/
 ├── lib/
-├── utils/
-└── assets/
+└── types/
+backend/getcited/ # Python Flask saliency/ad-hotspot service
 ```
 
 ---
 
 ## Getting Started
 
-### Clone the repository
+### Frontend
 
 ```bash
 git clone https://github.com/harsh4k/Getcited.git
-```
-
-### Navigate to the project
-
-```bash
 cd Getcited
-```
-
-### Install dependencies
-
-```bash
 npm install
+npm run dev       # dev server
+npm run build     # production build
 ```
 
-### Start the development server
+### Backend (saliency service)
 
 ```bash
-npm run dev
-```
-
-### Build for production
-
-```bash
-npm run build
+cd backend/getcited
+pip install -r requirements.txt
+python app.py
 ```
 
 ---
