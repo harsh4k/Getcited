@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  agentRules: false,
   // Hide the Next.js "N" dev emblem in the corner.
   devIndicators: false,
   images: {
