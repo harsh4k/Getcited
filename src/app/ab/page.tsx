@@ -48,10 +48,10 @@ export default function AbPage() {
   const [deleting, setDeleting] = useState(false);
 
   const loadSites = useCallback(async () => {
-    setError(null);
     try {
       const data = await api.listSites();
       setSites(data.sites);
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load site profiles");
     } finally {
@@ -60,7 +60,11 @@ export default function AbPage() {
   }, []);
 
   useEffect(() => {
-    void loadSites();
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) return loadSites();
+    });
+    return () => { active = false; };
   }, [loadSites]);
 
   const openCreate = () => {
@@ -425,6 +429,7 @@ export default function AbPage() {
 
             {showingDetail && activeSiteId != null && (
               <AbTestingPanel
+                key={activeSiteId}
                 siteId={activeSiteId}
                 onBack={() => {
                   setActiveSiteId(null);
