@@ -58,10 +58,10 @@ export function AbTestingPanel({ siteId, className, onBack }: AbTestingPanelProp
   const [htmlB, setHtmlB] = useState("");
 
   const refresh = useCallback(async () => {
-    setError(null);
     try {
       const data = await api.getSite(siteId);
       setDetail(data);
+      setError(null);
       return data;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load site profile");
@@ -90,9 +90,6 @@ export function AbTestingPanel({ siteId, className, onBack }: AbTestingPanelProp
   }, []);
 
   useEffect(() => {
-    setLoading(true);
-    setSuggestions([]);
-    setInsightSource(null);
     void (async () => {
       const data = await refresh();
       if (data) await loadInsights(data);
